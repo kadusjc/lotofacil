@@ -183,7 +183,7 @@ Os pesos podem ser ajustados via API (`weights`). Tudo é **determinístico** po
 É walk-forward, com prêmio real por concurso. Para apostas de n dezenas com h acertos, o número de combinações premiadas de k pontos é C(h,k)·C(n−h,15−k).
 
 ### 4.8 Visual
-O frontend usa um tema claro inspirado no bilhete: fundo pontilhado, volante com cabeçalho em faixa lilás/magenta, picote lateral e dezenas marcadas como se fosse a caneta. Fonte Nunito.
+O frontend segue o padrão visual do volante da Lotofácil no Loterias Online: roxo **#930089**, cabeçalho roxo de ponta a ponta, abas em formato de pílula, fundo cinza-claro, cartões brancos e **dezenas em círculos** (vazadas quando livres e preenchidas de roxo quando marcadas). Fonte Nunito Sans. Por ser um app pessoal e não oficial, não usa a logo nem a identidade visual da Caixa.
 
 ### 4.9 Abrindo o Neo4j no navegador
 1. Com o container rodando (`docker compose ps`), acesse **http://localhost:7474**.

@@ -21,14 +21,20 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('planner')
   const { Page } = TABS[tab]
   return (
-    <div className="app">
+    <>
       <header className="topbar">
-        <div>
-          <h1>Lotofácil Lab</h1>
-          <p className="muted small">Estatística, grafo e embeddings sobre todo o histórico oficial</p>
+        <div className="topbar-inner">
+          <div className="brand">
+            <CloverIcon />
+            <div>
+              <h1>Lotofácil Lab</h1>
+              <p className="small">Estatística, grafo e embeddings sobre todo o histórico oficial</p>
+            </div>
+          </div>
+          <SyncBar />
         </div>
-        <SyncBar />
       </header>
+    <div className="app">
       <nav className="tabs" role="tablist">
         {(Object.keys(TABS) as Tab[]).map((key) => (
           <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
@@ -44,6 +50,7 @@ export default function App() {
         resultados passados muda isso. Use este app como ferramenta de estudo e jogue apenas o que pode perder.
       </footer>
     </div>
+    </>
   )
 }
 
@@ -80,5 +87,20 @@ function SyncBar() {
       {state === 'done' && status.data?.message && <span className="muted small">{status.data.message}</span>}
       <ErrorBox error={start.error ?? (state === 'error' ? status.data?.message : null)} />
     </div>
+  )
+}
+
+/** Trevo estilizado (ícone genérico, não é marca). */
+function CloverIcon() {
+  return (
+    <svg className="brand-icon" viewBox="0 0 40 40" aria-hidden>
+      <g fill="currentColor">
+        <circle cx="14" cy="14" r="8" />
+        <circle cx="26" cy="14" r="8" />
+        <circle cx="14" cy="26" r="8" />
+        <circle cx="26" cy="26" r="8" />
+      </g>
+      <circle cx="20" cy="20" r="4" fill="#930089" />
+    </svg>
   )
 }
