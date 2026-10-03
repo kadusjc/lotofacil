@@ -83,6 +83,7 @@ Depois:
 3. O app mostra:
    - a **recomendação**, com o aviso de que ela é a forma de **maior chance possível** para aquele valor (para aumentar, só aumentando o valor), (ex.: "16 jogos diferentes de 15 dezenas"), com custo e a chance exata de pelo menos um 14+;
    - **todas as opções** que cabem no orçamento (1 aposta de 15, de 16, de 17 dezenas… ou vários jogos simples), cada uma **já com os números**, desenhados num volante no estilo do bilhete;
+   - o quadro **"Quanto você pode ganhar, em palavras simples"**: você paga R$ X e, se jogar assim, "não ganha nada em 34 de cada 100 vezes", "ganha um prêmio pequeno de R$ 7 a R$ 35 em 66 de cada 100", "faz 14 pontos 1 vez a cada 1.362 jogadas e recebe cerca de R$ 1.800", "faz 15 pontos 1 vez a cada 204 mil e recebe cerca de R$ 2 milhões", além de quanto volta na média. Os detalhes técnicos ficam em "Ver detalhes";
    - a **probabilidade real de 0 a 100%** de cada faixa (algum prêmio 11+, 13+, 14+ e 15 pontos), em barras na escala linear;
    - **quanto pode retornar em dinheiro**: valor pago, prêmio máximo possível, retorno médio esperado, resultado médio (R$ e %) e uma tabela de "se acertar X, recebe R$ Y";
    - a tabela de probabilidades exatas de 15 a 20 dezenas.
@@ -251,7 +252,7 @@ lotofacil/
 ├── backend/test/                # e2e
 └── frontend/src/
     ├── api/                     # client tipado + tipos
-    ├── components/              # volante (bilhete), guia de chances, medidor 0–100%, painel de retorno, feedback
+    ├── components/              # volante (bilhete), guia de chances, resumo em palavras simples, medidor 0–100%, painel de retorno, feedback
     ├── pages/                   # Planejador, Estatísticas, Backtest, Histórico
     └── lib/                     # formatação pt-BR
 ```
