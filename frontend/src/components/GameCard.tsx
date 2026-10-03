@@ -8,13 +8,16 @@ interface Props {
   compact?: boolean
 }
 
-/** Volante 5x5 com as dezenas marcadas. */
+/** Volante 5x5 no estilo de bilhete: papel claro, cabeçalho em faixa e dezenas marcadas a "caneta". */
 export function GameCard({ numbers, drawn, title, compact }: Props) {
   const selected = new Set(numbers)
   const hitSet = drawn ? new Set(drawn) : null
   return (
     <figure className={`game-card${compact ? ' compact' : ''}`} aria-label={title ?? 'Jogo'}>
-      {title && <figcaption>{title}</figcaption>}
+      <figcaption className="ticket-head">
+        <span className="ticket-brand">LOTOFÁCIL</span>
+        <span className="ticket-meta">{title ?? `${numbers.length} dezenas`}</span>
+      </figcaption>
       <div className="grid" role="list">
         {Array.from({ length: 25 }, (_, i) => i + 1).map((n) => {
           const isSelected = selected.has(n)
@@ -30,6 +33,10 @@ export function GameCard({ numbers, drawn, title, compact }: Props) {
             </span>
           )
         })}
+      </div>
+      <div className="ticket-foot">
+        <span>{numbers.length} marcadas</span>
+        {hitSet && <span>{numbers.filter((n) => hitSet.has(n)).length} acertos</span>}
       </div>
     </figure>
   )

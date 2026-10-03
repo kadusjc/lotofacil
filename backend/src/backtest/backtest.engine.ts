@@ -39,8 +39,12 @@ export interface BacktestResult {
 
 /** Prêmio de uma aposta de `betSize` dezenas que acertou `hits` dezenas no concurso `draw`. */
 export function prizeFor(draw: Draw, betSize: number, hits: number): number {
+  return prizeForTiers(draw.prizes, betSize, hits);
+}
+
+export function prizeForTiers(prizes: Array<{ hits: number; prize: number }>, betSize: number, hits: number): number {
   let total = 0;
-  for (const tier of draw.prizes) {
+  for (const tier of prizes) {
     // Número de combinações de 15 dentro da aposta que acertam exatamente tier.hits.
     const combos = binomial(hits, tier.hits) * binomial(betSize - hits, DRAWN_PER_CONTEST - tier.hits);
     total += combos * tier.prize;

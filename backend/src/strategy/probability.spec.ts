@@ -50,3 +50,21 @@ describe('bet planner', () => {
     expect(plan.rationale).toMatch(/insuficiente/);
   });
 });
+
+describe('planOdds', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { planOdds } = require('./bet-planner');
+  it('single 15-number bet uses exact hypergeometric', () => {
+    const o = planOdds([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], 15);
+    expect(o.atLeast14).toBeCloseTo(151 / 3_268_760, 12);
+    expect(o.atLeast11).toBeCloseTo(0.1062, 3);
+  });
+  it('multiple games: Monte Carlo 11+ grows with more games and 15 is exact', () => {
+    const a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const b = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+    const o = planOdds([a, b], 15, 50_000);
+    expect(o.atLeast11).toBeGreaterThan(0.15);
+    expect(o.atLeast11).toBeLessThan(0.22);
+    expect(o.jackpot).toBeCloseTo(2 / 3_268_760, 12);
+  });
+});

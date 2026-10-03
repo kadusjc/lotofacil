@@ -1,5 +1,5 @@
-import { binomial, DRAWN_PER_CONTEST, MAX_BET_SIZE, MIN_BET_SIZE, TOTAL_NUMBERS } from '../common/lottery';
-import { betProbability, TOTAL_COMBINATIONS } from './probability';
+import { binomial, createRng, DRAWN_PER_CONTEST, MAX_BET_SIZE, MIN_BET_SIZE, TOTAL_NUMBERS } from '../common/lottery';
+import { betProbability, hitProbability, TOTAL_COMBINATIONS } from './probability';
 
 /**
  * Planejador: dado um orçamento, compara as formas de gastá-lo e recomenda a de maior chance de
@@ -89,6 +89,61 @@ export function estimateMultipleGames(k: number, typicalOverlap = 9) {
   const pairs = (k * (k - 1)) / 2;
   const lower = Math.max(0, upper - pairs * jointAtLeast(typicalOverlap, 14));
   return { lower, upper, estimate: (lower + upper) / 2 };
+}
+
+/** Chances (0–1) de premiação de um plano: pelo menos um cartão com 11+, 13+, 14+ e 15 acertos. */
+export interface PlanOdds {
+  atLeast11: number;
+  atLeast13: number;
+  atLeast14: number;
+  jackpot: number;
+}
+
+/**
+ * Aposta única: hipergeométrica exata.
+ * Vários jogos de 15: 14+ pelo limite inferior de Bonferroni (exato com sobreposição <= 12),
+ * 15 exato (jogos distintos são eventos disjuntos) e 11+/13+ por Monte Carlo.
+ */
+export function planOdds(games: number[][], betSize: number, simulations = 100_000, seed = 1): PlanOdds {
+  if (games.length <= 1) {
+    const atLeast = (min: number) => {
+      let p = 0;
+      for (let k = min; k <= DRAWN_PER_CONTEST; k++) p += hitProbability(betSize, k);
+      return p;
+    };
+    return { atLeast11: atLeast(11), atLeast13: atLeast(13), atLeast14: atLeast(14), jackpot: atLeast(15) };
+  }
+  const rng = createRng(seed);
+  const masks = games.map((g) => g.reduce((m, n) => m | (1 << (n - 1)), 0));
+  let hit11 = 0;
+  let hit13 = 0;
+  const pool = Array.from({ length: TOTAL_NUMBERS }, (_, i) => i);
+  for (let s = 0; s < simulations; s++) {
+    // Fisher–Yates parcial: 15 dezenas sorteadas.
+    let drawn = 0;
+    for (let i = 0; i < DRAWN_PER_CONTEST; i++) {
+      const j = i + Math.floor(rng() * (TOTAL_NUMBERS - i));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+      drawn |= 1 << pool[i];
+    }
+    let best = 0;
+    for (const m of masks) best = Math.max(best, popcount(m & drawn));
+    if (best >= 11) hit11++;
+    if (best >= 13) hit13++;
+  }
+  const distinct = new Set(games.map((g) => [...g].sort((a, b) => a - b).join('-'))).size;
+  return {
+    atLeast11: hit11 / simulations,
+    atLeast13: hit13 / simulations,
+    atLeast14: multipleGamesAtLeast14(games).lower,
+    jackpot: distinct / TOTAL_COMBINATIONS,
+  };
+}
+
+function popcount(x: number): number {
+  x -= (x >>> 1) & 0x55555555;
+  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+  return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
 }
 
 export function planBudget(budget: number, betPrice: number, maxGames = 50): PlanRecommendation {

@@ -72,11 +72,19 @@ A sincronização é **incremental**: as próximas execuções só baixam os con
 ## 3. Como usar o app
 
 ### Aba "Sugerir jogo" (Planejador): a principal
+No topo, o painel **"Como aumentar sua chance de ganhar"** explica de forma direta:
+- que todo jogo de 15 dezenas tem a mesma chance;
+- o que aumenta a chance (apostar mais, espalhar os jogos, bolão) e o que não aumenta (dezenas quentes ou atrasadas, padrões, IA);
+- uma escada de valores, de R$ 3,50 a R$ 3.500, com a chance real de 14+ e de 15 pontos em barras de 0 a 100%. Clicar numa linha já gera o plano para aquele valor.
+
+Depois:
 1. Informe **quanto quer gastar** (ou clique num valor pronto).
 2. Clique em **Sugerir jogo**.
 3. O app mostra:
-   - a **recomendação** (ex.: "16 jogos diferentes de 15 dezenas"), com custo e a chance exata de pelo menos um 14+;
-   - **todas as opções** que cabem no orçamento (1 aposta de 15, de 16, de 17 dezenas… ou vários jogos simples), cada uma **já com os números**, desenhados no volante;
+   - a **recomendação**, com o aviso de que ela é a forma de **maior chance possível** para aquele valor (para aumentar, só aumentando o valor), (ex.: "16 jogos diferentes de 15 dezenas"), com custo e a chance exata de pelo menos um 14+;
+   - **todas as opções** que cabem no orçamento (1 aposta de 15, de 16, de 17 dezenas… ou vários jogos simples), cada uma **já com os números**, desenhados num volante no estilo do bilhete;
+   - a **probabilidade real de 0 a 100%** de cada faixa (algum prêmio 11+, 13+, 14+ e 15 pontos), em barras na escala linear;
+   - **quanto pode retornar em dinheiro**: valor pago, prêmio máximo possível, retorno médio esperado, resultado médio (R$ e %) e uma tabela de "se acertar X, recebe R$ Y";
    - a tabela de probabilidades exatas de 15 a 20 dezenas.
 4. Você escolhe a opção que preferir.
 
@@ -90,6 +98,19 @@ A sincronização é **incremental**: as próximas execuções só baixam os con
 | 18 | R$ 2.856,00 | 1 em 147 | 1 em 4.006 |
 | 19 | R$ 13.566,00 | 1 em 44 | 1 em 843 |
 | 20 | R$ 54.264,00 | 1 em 16 | 1 em 211 |
+
+**Exemplo real (R$ 56, concurso 3795):**
+
+| | 1 jogo de 15 | 1 aposta de 16 | 16 jogos de 15 (recomendado) |
+|---|---|---|---|
+| Algum prêmio (11+) | 10,6% | 22,2% | 65,8% |
+| 14 ou 15 | 0,0046% | 0,034% | 0,074% |
+| 15 pontos | 0,000031% | 0,00049% | 0,00049% |
+| Prêmio máximo | ~R$ 2,0 mi | ~R$ 2,04 mi | ~R$ 2,0 mi |
+| Retorno médio | R$ 1,59 | R$ 25,42 | R$ 25,42 |
+| Resultado médio | −54% | −54% | −54% |
+
+Repare que **o resultado médio é o mesmo (−54%) em qualquer opção**: cada combinação de 15 dezenas vale o mesmo em média. Distribuir a aposta muda a *chance* de cada faixa, não o valor esperado.
 
 ### Aba "Estatísticas"
 Frequência histórica, frequência recente e atraso de cada dezena (com a linha do esperado pelo acaso), distribuições de soma, ímpares, primos, moldura e repetidas do concurso anterior, e o **teste qui-quadrado de uniformidade**.
@@ -150,9 +171,25 @@ Os pesos podem ser ajustados via API (`weights`). Tudo é **determinístico** po
 - As probabilidades por quantidade de dezenas vêm da **hipergeométrica exata**, e o custo é C(n,15) × preço.
 - Para vários jogos, P(pelo menos um 14+) é calculada pelos **limites de Bonferroni**, com a interseção exata de cada par por enumeração das 4 regiões do volante. Fato útil: dois jogos só fazem 14+ juntos se compartilharem **13 ou mais dezenas**. Com sobreposição ≤ 12, os eventos são disjuntos e a chance total é exatamente a soma, por isso o planejador usa sobreposição máxima de 11.
 - A recomendação é a opção de maior chance de 14+ dentro do orçamento.
+- **Probabilidades de 0 a 100% (`planOdds`)**: para aposta única, a hipergeométrica exata; para vários jogos, 14+ por Bonferroni (exato), 15 exato (jogos distintos são eventos disjuntos) e 11+/13+ por Monte Carlo (100 mil sorteios simulados, com bitmasks).
 
-### 4.6 Backtest (`backtest.engine.ts`)
+### 4.6 Retorno financeiro (`returns.ts`)
+- **Prêmios**: os de 11, 12 e 13 acertos são fixos, com o valor vigente do último concurso (hoje R$ 7, R$ 14 e R$ 35). Os de 14 e 15 usam a **média real dos últimos 50 concursos** que tiveram ganhador na faixa.
+- **Pagamento por faixa**: numa aposta de n dezenas com h acertos, somam-se todas as combinações de 15 premiadas, C(h,k)·C(n−h,15−k) para cada faixa k.
+- **Valor esperado**: Σ P(h acertos) × pagamento(h). Para vários jogos, por linearidade, é igual a k × o valor esperado de um jogo.
+- **Resultado médio**: valor esperado − custo, em R$ e em %.
+
+### 4.7 Backtest (`backtest.engine.ts`)
 É walk-forward, com prêmio real por concurso. Para apostas de n dezenas com h acertos, o número de combinações premiadas de k pontos é C(h,k)·C(n−h,15−k).
+
+### 4.8 Visual
+O frontend usa um tema claro inspirado no bilhete: fundo pontilhado, volante com cabeçalho em faixa lilás/magenta, picote lateral e dezenas marcadas como se fosse a caneta. Fonte Nunito.
+
+### 4.9 Abrindo o Neo4j no navegador
+1. Com o container rodando (`docker compose ps`), acesse **http://localhost:7474**.
+2. Em *Connect URL*, use `neo4j://localhost:7687` (ou `bolt://localhost:7687`).
+3. Usuário `neo4j`, senha `lotofacil123` (ou o que estiver em `NEO4J_PASSWORD`).
+4. Rode, por exemplo, `MATCH (d:Draw)-[r:DREW]->(n:Number) WHERE d.concurso = 3795 RETURN d, r, n` para ver o grafo do último concurso, ou as consultas da seção 4.2.
 
 ## 5. API
 
@@ -170,7 +207,7 @@ Base: `http://localhost:3100/api`. A documentação interativa fica em **http://
 | GET | `/pairs?limit=&orderBy=count\|ppmi` | Pares mais frequentes (grafo) |
 | GET | `/stats/summary` | Estatísticas completas |
 | GET | `/probabilities` | Tabela exata de 15 a 20 dezenas |
-| POST | `/plan` `{budget}` | **Quantas dezenas comprar + os números** |
+| POST | `/plan` `{budget}` | **Quantas dezenas comprar + os números**, com probabilidades 0–100% (`odds`) e retorno em R$ (`returns`) |
 | POST | `/suggestions` `{betSize, games, seed?, weights?}` | Jogos sugeridos |
 | POST | `/backtest` `{betSize, testSize, weights?}` | Backtest |
 
@@ -182,12 +219,12 @@ curl -X POST localhost:3100/api/plan -H 'content-type: application/json' -d '{"b
 
 ```bash
 cd backend
-npm test            # 42 testes unitários (estatística, embeddings, estratégia, probabilidades, planner, backtest, parser, config, concorrência)
+npm test            # 48 testes unitários (estatística, embeddings, estratégia, probabilidades, planner, retorno financeiro, backtest, parser, config, concorrência)
 npm run test:e2e    # 6 testes e2e da API (Nest completo, com Neo4j e scraper simulados)
 npm run test:cov    # cobertura
 
 cd ../frontend
-npm test            # componentes, formatação e fluxo do planejador
+npm test            # componentes, guia de chances, formatação e fluxo do planejador
 npm run typecheck && npm run build
 ```
 
@@ -206,7 +243,7 @@ lotofacil/
 │   ├── draws/                   # repositório do grafo, sync, endpoints de concursos
 │   ├── statistics/              # frequência, atraso, perfis, chi-quadrado
 │   ├── embeddings/              # embeddings de concursos e de dezenas (PPMI + espectral), k-NN
-│   ├── strategy/                # motor de sugestão, probabilidades, planejador
+│   ├── strategy/                # motor de sugestão, probabilidades, planejador, retorno financeiro
 │   ├── backtest/                # walk-forward
 │   ├── analysis/                # endpoints de análise
 │   ├── cli/sync.ts              # npm run sync
@@ -214,7 +251,7 @@ lotofacil/
 ├── backend/test/                # e2e
 └── frontend/src/
     ├── api/                     # client tipado + tipos
-    ├── components/              # volante 5x5, feedback
+    ├── components/              # volante (bilhete), guia de chances, medidor 0–100%, painel de retorno, feedback
     ├── pages/                   # Planejador, Estatísticas, Backtest, Histórico
     └── lib/                     # formatação pt-BR
 ```

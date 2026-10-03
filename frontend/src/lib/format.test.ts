@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatOneIn, formatPct, pad2 } from './format'
+import { formatChance, formatDate, formatOneIn, formatPct, pad2 } from './format'
 
 describe('format', () => {
   it('formats values in pt-BR', () => {
@@ -7,5 +7,8 @@ describe('format', () => {
     expect(formatDate('2026-10-02')).toBe('02/10/2026')
     expect(formatOneIn(21648)).toBe('1 em 21.648')
     expect(formatPct(0.6)).toBe('60,0%')
+    expect(formatChance(0.1062)).toBe('10,6%')
+    expect(formatChance(151 / 3268760)).toBe('0,0046%')
+    expect(formatChance(0)).toBe('0%')
   })
 })

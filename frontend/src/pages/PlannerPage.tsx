@@ -2,8 +2,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api } from '../api/client'
 import type { BetPlan } from '../api/types'
+import { ChanceGuide } from '../components/ChanceGuide'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
+import { OddsMeter } from '../components/OddsMeter'
+import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
 import { formatBRL, formatOneIn } from '../lib/format'
 
 const BUDGET_PRESETS = [3.5, 56, 100, 476, 1000]
@@ -18,8 +21,14 @@ export function PlannerPage() {
     plan.mutate(budget)
   }
 
+  const pickBudget = (value: number) => {
+    setBudget(value)
+    plan.mutate(value)
+  }
+
   return (
     <section className="stack">
+      <ChanceGuide onPickBudget={pickBudget} />
       <form className="panel row wrap" onSubmit={submit}>
         <label className="field">
           <span>Quanto quer gastar?</span>
@@ -58,6 +67,13 @@ export function PlannerPage() {
                 <strong>{formatOneIn(plan.data.recommended.oneIn)}</strong>
               </p>
               <p className="muted">{plan.data.rationale}</p>
+              <p className="best-note">
+                ✔ Esta é a forma de <strong>maior chance possível</strong> para {formatBRL(plan.data.budget)}. Para aumentar
+                a chance, só aumentando o valor apostado.
+              </p>
+              <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
+              <OddsMeter odds={plan.data.recommended.odds} />
+              <ReturnsPanel returns={plan.data.recommended.returns} cost={plan.data.recommended.cost} />
             </div>
           ) : (
             <p className="error">{plan.data.rationale}</p>
@@ -121,6 +137,8 @@ function PlanOption({ plan, recommended }: { plan: BetPlan; recommended: boolean
           </p>
         </div>
       </header>
+      <OddsMeter odds={plan.odds} />
+      <ReturnsSummary returns={plan.returns} />
       <div className="games">
         {visible.map((g, i) => (
           <div key={g.numbers.join('-')} className="stack-sm">

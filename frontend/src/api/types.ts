@@ -44,6 +44,26 @@ export interface BetPlan {
   oneIn: number
   description: string
   games: SuggestedGame[]
+  odds: PlanOdds
+  returns: PlanReturns
+}
+
+export interface PlanReturns {
+  basedOnLastDraws: number
+  expectedPrize: number
+  expectedNet: number
+  expectedReturnPct: number
+  maxPayout: number
+  probabilityScope: 'bet' | 'per-ticket'
+  tiers: Array<{ hits: number; probability: number; payout: number }>
+}
+
+/** Chances de 0 a 1 de pelo menos um cartão atingir cada faixa. */
+export interface PlanOdds {
+  atLeast11: number
+  atLeast13: number
+  atLeast14: number
+  jackpot: number
 }
 
 export interface PlanResponse {

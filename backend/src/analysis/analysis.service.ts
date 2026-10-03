@@ -4,8 +4,9 @@ import { Draw } from '../common/lottery';
 import { AppConfig } from '../config/configuration';
 import { DrawsService } from '../draws/draws.service';
 import { runBacktest } from '../backtest/backtest.engine';
-import { multipleGamesAtLeast14, planBudget, BetPlan } from '../strategy/bet-planner';
+import { multipleGamesAtLeast14, planBudget, planOdds, BetPlan, PlanOdds } from '../strategy/bet-planner';
 import { probabilityTable } from '../strategy/probability';
+import { averagePrizes, planReturns, PlanReturns } from '../strategy/returns';
 import { StrategyWeights, suggestGames, SuggestedGame } from '../strategy/strategy.engine';
 import {
   distribution,
@@ -19,7 +20,11 @@ import { BacktestDto, PlanDto, SuggestDto } from './analysis.dto';
 
 export interface PlanWithGames extends BetPlan {
   games: SuggestedGame[];
+  odds: PlanOdds;
+  returns: PlanReturns;
 }
+
+const PRIZE_WINDOW = 50;
 
 @Injectable()
 export class AnalysisService {
@@ -72,6 +77,7 @@ export class AnalysisService {
     const draws = await this.requireDraws();
     const recommendation = planBudget(dto.budget, this.betPrice);
     const weights = dto.weights as Partial<StrategyWeights>;
+    const prizes = averagePrizes(draws, PRIZE_WINDOW);
 
     const plans: PlanWithGames[] = recommendation.plans.map((plan) => {
       const { games } = suggestGames(draws, {
@@ -82,9 +88,11 @@ export class AnalysisService {
         maxOverlap: plan.kind === 'multiple-games' ? 11 : undefined,
         candidates: plan.kind === 'multiple-games' ? Math.max(20000, plan.tickets * 1500) : 20000,
       });
-      if (plan.kind !== 'multiple-games') return { ...plan, games };
+      const odds = planOdds(games.map((g) => g.numbers), plan.betSize);
+      const returns = planReturns(plan.betSize, games.length, plan.kind === 'multiple-games' ? games.length * this.betPrice : plan.cost, prizes, PRIZE_WINDOW);
+      if (plan.kind !== 'multiple-games') return { ...plan, games, odds, returns };
       const prob = multipleGamesAtLeast14(games.map((g) => g.numbers));
-      return { ...plan, tickets: games.length, probAtLeast14: prob, oneIn: Math.round(1 / prob.estimate), games };
+      return { ...plan, tickets: games.length, cost: games.length * this.betPrice, probAtLeast14: prob, oneIn: Math.round(1 / prob.estimate), games, odds, returns };
     });
 
     const recommended = plans.reduce<PlanWithGames | null>(

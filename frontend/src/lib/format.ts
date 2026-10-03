@@ -14,3 +14,11 @@ export function formatDate(iso: string): string {
 export function formatPct(value: number, digits = 1): string {
   return `${(value * 100).toLocaleString('pt-BR', { maximumFractionDigits: digits, minimumFractionDigits: digits })}%`
 }
+
+/** Percentual com casas decimais suficientes para valores minúsculos (ex.: 0,0046%). */
+export function formatChance(p: number): string {
+  if (p <= 0) return '0%'
+  const pct = p * 100
+  const digits = pct >= 1 ? 1 : Math.min(8, Math.ceil(-Math.log10(pct)) + 1)
+  return `${pct.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })}%`
+}
