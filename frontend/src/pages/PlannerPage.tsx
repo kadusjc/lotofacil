@@ -6,6 +6,7 @@ import { ChanceGuide } from '../components/ChanceGuide'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
 import { OddsMeter } from '../components/OddsMeter'
+import { PlainWinnings } from '../components/PlainWinnings'
 import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
 import { formatBRL, formatOneIn } from '../lib/format'
 
@@ -71,9 +72,13 @@ export function PlannerPage() {
                 ✔ Esta é a forma de <strong>maior chance possível</strong> para {formatBRL(plan.data.budget)}. Para aumentar
                 a chance, só aumentando o valor apostado.
               </p>
-              <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
-              <OddsMeter odds={plan.data.recommended.odds} />
-              <ReturnsPanel returns={plan.data.recommended.returns} cost={plan.data.recommended.cost} />
+              <PlainWinnings plan={plan.data.recommended} />
+              <details className="more">
+                <summary>Ver detalhes técnicos (probabilidades e valores por faixa)</summary>
+                <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
+                <OddsMeter odds={plan.data.recommended.odds} />
+                <ReturnsPanel returns={plan.data.recommended.returns} cost={plan.data.recommended.cost} />
+              </details>
             </div>
           ) : (
             <p className="error">{plan.data.rationale}</p>

@@ -164,3 +164,17 @@ footer { padding: 8px 0 24px; }
 .guide-table tr.clickable:hover { background: var(--accent-soft); }
 .bar-cell { width: 30%; min-width: 120px; }
 .best-note { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: #eefaf3; color: #1d6e47; border: 1px solid #c4ead5; }
+
+.plain { margin-top: 14px; background: var(--surface); border: 2px solid var(--accent); border-radius: 14px; padding: 16px; }
+.plain h3 { font-size: 1.15rem; }
+.plain-pay { font-size: 1.05rem; margin-bottom: 10px; }
+.plain-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.plain-row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); }
+.plain-row.neg { background: #fff4f2; border-color: #f3cfc9; }
+.plain-row.mid { background: #fffaeb; border-color: #f2e2b0; }
+.plain-row.pos { background: #eefaf3; border-color: #c4ead5; }
+.plain-emoji { font-size: 1.8rem; line-height: 1; }
+.plain-text { display: flex; flex-direction: column; font-size: 0.98rem; }
+.plain-bottom { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 1rem; }
+details.more { margin-top: 12px; }
+details.more summary { color: var(--accent); }
