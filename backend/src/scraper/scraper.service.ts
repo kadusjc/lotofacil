@@ -14,6 +14,12 @@ export interface FetchResult {
   failed: number[];
 }
 
+/** Sessão aberta no portal: um único Chromium reaproveitado por todas as consultas. */
+export interface ScraperSession {
+  fetchLatestConcurso(): Promise<number>;
+  fetchConcursos(concursos: number[], onProgress?: (done: number, total: number) => void): Promise<FetchResult>;
+}
+
 /**
  * Coleta resultados com Playwright: abre o portal num Chromium real (obtém cookies/sessão
  * como um navegador) e usa o APIRequestContext do mesmo contexto para buscar o JSON de cada
@@ -25,34 +31,48 @@ export class ScraperService {
 
   constructor(private readonly config: ConfigService<AppConfig, true>) {}
 
-  async fetchLatestConcurso(): Promise<number> {
-    return this.withBrowser(async (context) => {
-      const latest = await this.fetchJson(context, `${CAIXA_API_URL}/`);
-      return latest.numero;
-    });
+  /** Abre o navegador uma vez, executa `fn` e fecha ao final (mesmo em caso de erro). */
+  async withSession<T>(fn: (session: ScraperSession) => Promise<T>): Promise<T> {
+    return this.withBrowser((context) =>
+      fn({
+        fetchLatestConcurso: () => this.fetchLatestConcurso(context),
+        fetchConcursos: (concursos, onProgress) => this.fetchConcursos(context, concursos, onProgress),
+      }),
+    );
   }
 
-  async fetchConcursos(concursos: number[], onProgress?: (done: number, total: number) => void): Promise<FetchResult> {
+  private async fetchLatestConcurso(context: BrowserContext): Promise<number> {
+    const latest = await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/`));
+    // Sem essa checagem, uma resposta inesperada viraria "0 concursos faltando" silenciosamente.
+    if (!Number.isInteger(latest?.numero) || latest.numero < 1) {
+      throw new Error(`Resposta inválida ao consultar o último concurso: ${JSON.stringify(latest).slice(0, 200)}`);
+    }
+    return latest.numero;
+  }
+
+  private async fetchConcursos(
+    context: BrowserContext,
+    concursos: number[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<FetchResult> {
     if (concursos.length === 0) return { draws: [], failed: [] };
     const concurrency = this.config.get('scrapeConcurrency', { infer: true });
-    return this.withBrowser(async (context) => {
-      const failed: number[] = [];
-      let done = 0;
-      const results = await mapWithConcurrency(concursos, concurrency, async (concurso) => {
-        try {
-          const payload = await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/${concurso}`));
-          return parseCaixaResponse(payload);
-        } catch (error) {
-          this.logger.warn(`Falha no concurso ${concurso}: ${(error as Error).message}`);
-          failed.push(concurso);
-          return null;
-        } finally {
-          done++;
-          if (done % 100 === 0 || done === concursos.length) onProgress?.(done, concursos.length);
-        }
-      });
-      return { draws: results.filter((d): d is Draw => d !== null), failed: failed.sort((a, b) => a - b) };
+    const failed: number[] = [];
+    let done = 0;
+    const results = await mapWithConcurrency(concursos, concurrency, async (concurso) => {
+      try {
+        const payload = await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/${concurso}`));
+        return parseCaixaResponse(payload);
+      } catch (error) {
+        this.logger.warn(`Falha no concurso ${concurso}: ${(error as Error).message}`);
+        failed.push(concurso);
+        return null;
+      } finally {
+        done++;
+        if (done % 100 === 0 || done === concursos.length) onProgress?.(done, concursos.length);
+      }
     });
+    return { draws: results.filter((d): d is Draw => d !== null), failed: failed.sort((a, b) => a - b) };
   }
 
   private async fetchJson(context: BrowserContext, url: string): Promise<CaixaLotofacilResponse> {

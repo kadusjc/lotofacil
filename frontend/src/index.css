@@ -53,7 +53,7 @@ button.primary:hover:not(:disabled) { filter: brightness(1.06); }
 button.chip { padding: 4px 10px; border-radius: 999px; font-size: 0.85rem; }
 button.chip.active { background: var(--accent-soft); border-color: var(--accent); }
 button.link { border: none; background: none; color: var(--accent); padding: 4px 0; }
-input, select { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+input, select, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; min-width: 0; box-shadow: 0 1px 3px rgba(163, 34, 154, 0.05); }
 .panel.highlight { border-color: var(--cell-border); background: linear-gradient(135deg, #fff 0%, var(--accent-soft) 100%); border-left: 5px solid var(--accent); }
@@ -178,3 +178,4 @@ footer { padding: 8px 0 24px; }
 .plain-bottom { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 1rem; }
 details.more { margin-top: 12px; }
 details.more summary { color: var(--accent); }
+textarea { width: 100%; resize: vertical; font-family: ui-monospace, monospace; }

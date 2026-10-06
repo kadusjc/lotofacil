@@ -1,4 +1,5 @@
 import { binomial, countHits, Draw, DRAWN_PER_CONTEST } from '../common/lottery';
+import { planBudget } from '../strategy/bet-planner';
 import { hitProbability } from '../strategy/probability';
 import { StrategyOptions, suggestGames } from '../strategy/strategy.engine';
 
@@ -10,19 +11,31 @@ import { StrategyOptions, suggestGames } from '../strategy/strategy.engine';
 export interface BacktestOptions extends StrategyOptions {
   testSize?: number;
   betPrice?: number;
+  /** Se informado, testa o plano recomendado para esse orçamento (ex.: 56 → 16 jogos de 15). */
+  budget?: number;
 }
 
 export interface BacktestRow {
   concurso: number;
+  /** Primeiro bilhete (compatibilidade). */
   game: number[];
+  games: number[][];
   drawn: number[];
+  /** Melhor resultado entre os bilhetes do concurso. */
   hits: number;
+  ticketHits: number[];
+  /** Soma dos prêmios de todos os bilhetes. */
   prize: number;
 }
 
 export interface BacktestResult {
   betSize: number;
+  /** Bilhetes por concurso. */
+  tickets: number;
+  budget: number | null;
+  plan: string;
   testSize: number;
+  /** Média de acertos por bilhete. */
   meanHits: number;
   expectedRandomMeanHits: number;
   /** Intervalo de confiança 95% da média de acertos da estratégia. */
@@ -53,30 +66,52 @@ export function prizeForTiers(prizes: Array<{ hits: number; prize: number }>, be
 }
 
 export function runBacktest(draws: Draw[], options: BacktestOptions = {}): BacktestResult {
-  const betSize = options.betSize ?? DRAWN_PER_CONTEST;
   const testSize = Math.min(options.testSize ?? 100, draws.length - 100);
   const betPrice = options.betPrice ?? 3.5;
   if (testSize <= 0) throw new Error('Histórico insuficiente para backtest.');
 
+  let betSize = options.betSize ?? DRAWN_PER_CONTEST;
+  let tickets = 1;
+  let plan = `1 aposta de ${betSize} dezenas`;
+  if (options.budget !== undefined) {
+    const recommended = planBudget(options.budget, betPrice).recommended;
+    if (!recommended) throw new RangeError(`Orçamento insuficiente: uma aposta simples custa R$ ${betPrice.toFixed(2)}.`);
+    betSize = recommended.betSize;
+    tickets = recommended.tickets;
+    plan = recommended.description;
+  }
+  const multiple = tickets > 1;
+
   const rows: BacktestRow[] = [];
   for (let t = draws.length - testSize; t < draws.length; t++) {
-    const train = draws.slice(0, t);
     const target = draws[t];
-    const { games } = suggestGames(train, {
+    const { games } = suggestGames(draws.slice(0, t), {
       ...options,
       betSize,
-      games: 1,
-      candidates: options.candidates ?? 1500,
+      games: tickets,
+      // Mesmo critério do planejador: sobreposição <= 11 mantém os eventos "14+" disjuntos.
+      maxOverlap: multiple ? 11 : options.maxOverlap,
+      candidates: options.candidates ?? Math.max(1500, tickets * 200),
       seed: target.concurso,
     });
-    const game = games[0].numbers;
-    const hits = countHits(game, target.numbers);
-    rows.push({ concurso: target.concurso, game, drawn: target.numbers, hits, prize: prizeFor(target, betSize, hits) });
+    const numbers = games.map((g) => g.numbers);
+    const ticketHits = numbers.map((g) => countHits(g, target.numbers));
+    rows.push({
+      concurso: target.concurso,
+      game: numbers[0],
+      games: numbers,
+      drawn: target.numbers,
+      hits: Math.max(...ticketHits),
+      ticketHits,
+      prize: ticketHits.reduce((a, h) => a + prizeFor(target, betSize, h), 0),
+    });
   }
 
-  const hitsList = rows.map((r) => r.hits);
-  const meanHits = hitsList.reduce((a, b) => a + b, 0) / rows.length;
-  const variance = hitsList.reduce((a, b) => a + (b - meanHits) ** 2, 0) / Math.max(rows.length - 1, 1);
+  // Unidade estatística = concurso (bilhetes do mesmo concurso não são independentes).
+  const allHits = rows.flatMap((r) => r.ticketHits);
+  const perDraw = rows.map((r) => r.ticketHits.reduce((a, b) => a + b, 0) / r.ticketHits.length);
+  const meanHits = perDraw.reduce((a, b) => a + b, 0) / rows.length;
+  const variance = perDraw.reduce((a, b) => a + (b - meanHits) ** 2, 0) / Math.max(rows.length - 1, 1);
   const margin = 1.96 * Math.sqrt(variance / rows.length);
   const expectedRandomMeanHits = (betSize * DRAWN_PER_CONTEST) / 25;
 
@@ -85,13 +120,13 @@ export function runBacktest(draws: Draw[], options: BacktestOptions = {}): Backt
   for (let h = minHits; h <= DRAWN_PER_CONTEST; h++) {
     hitDistribution.push({
       hits: h,
-      observed: hitsList.filter((x) => x === h).length,
-      expectedRandom: hitProbability(betSize, h) * rows.length,
+      observed: allHits.filter((x) => x === h).length,
+      expectedRandom: hitProbability(betSize, h) * allHits.length,
     });
   }
 
   const combos = binomial(betSize, DRAWN_PER_CONTEST);
-  const totalCost = rows.length * combos * betPrice;
+  const totalCost = rows.length * tickets * combos * betPrice;
   const totalPrize = rows.reduce((a, r) => a + r.prize, 0);
   const ci: [number, number] = [meanHits - margin, meanHits + margin];
   const beatsRandom = ci[0] > expectedRandomMeanHits;
@@ -101,13 +136,16 @@ export function runBacktest(draws: Draw[], options: BacktestOptions = {}): Backt
 
   return {
     betSize,
+    tickets,
+    budget: options.budget ?? null,
+    plan,
     testSize: rows.length,
     meanHits,
     expectedRandomMeanHits,
     meanHitsCi95: ci,
     hitDistribution,
-    atLeast11: hitsList.filter((h) => h >= 11).length,
-    atLeast14: hitsList.filter((h) => h >= 14).length,
+    atLeast11: rows.filter((r) => r.hits >= 11).length,
+    atLeast14: rows.filter((r) => r.hits >= 14).length,
     totalCost,
     totalPrize,
     roi: totalCost ? (totalPrize - totalCost) / totalCost : 0,

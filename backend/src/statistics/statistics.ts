@@ -144,12 +144,20 @@ export function cooccurrenceMatrix(draws: Draw[]): number[][] {
   return m;
 }
 
-/** Teste qui-quadrado de aderência à uniformidade das frequências das dezenas. */
+/**
+ * Teste qui-quadrado de aderência à uniformidade das frequências das dezenas.
+ * Cada concurso sorteia 15 de 25 sem reposição, então cada frequência é Binomial(n, p) com
+ * p = 15/25 e as contagens são negativamente correlacionadas. O Pearson ingênuo (÷ esperado)
+ * subestima a estatística por (1 − p); a forma correta é Σ(O−E)²/(n·p·(1−p)) · (N−1)/N ~ χ²(N−1).
+ */
 export function uniformityTest(draws: Draw[]): UniformityTest {
-  const expected = (draws.length * DRAWN_PER_CONTEST) / TOTAL_NUMBERS;
+  const p = DRAWN_PER_CONTEST / TOTAL_NUMBERS;
+  const expected = draws.length * p;
+  const variance = expected * (1 - p);
   const stats = numberStats(draws);
-  const chiSquare = expected
-    ? stats.reduce((acc, s) => acc + (s.frequency - expected) ** 2 / expected, 0)
+  const chiSquare = variance
+    ? (stats.reduce((acc, s) => acc + (s.frequency - expected) ** 2, 0) / variance) *
+      ((TOTAL_NUMBERS - 1) / TOTAL_NUMBERS)
     : 0;
   const df = TOTAL_NUMBERS - 1;
   // Wilson–Hilferty: (X/k)^(1/3) ~ N(1 - 2/(9k), 2/(9k))

@@ -34,3 +34,25 @@ export async function mapWithConcurrency<T, R>(
   await Promise.all(workers);
   return results;
 }
+
+/** Semáforo simples: no máximo `limit` execuções simultâneas de `run`, as demais aguardam em fila. */
+export class Semaphore {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    // A vaga é transferida diretamente a quem espera (sem decrementar), evitando que uma chamada
+    // nova "fure a fila" entre a liberação e o despertar do próximo.
+    if (this.active >= this.limit) await new Promise<void>((resolve) => this.queue.push(resolve));
+    else this.active++;
+    try {
+      return await fn();
+    } finally {
+      const next = this.queue.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+}

@@ -1,53 +1,9 @@
 import type { BetPlan } from '../api/types'
 import { formatBRL, formatInt } from '../lib/format'
-
-interface Outcome {
-  emoji: string
-  title: string
-  probability: number
-  money: string
-  tone: 'neg' | 'mid' | 'pos'
-}
-
-/** Linha do tempo em linguagem simples: "se jogar 100 vezes assim, o que acontece?". */
-export function buildOutcomes(plan: BetPlan): Outcome[] {
-  const { odds, returns, cost } = plan
-  const payout = (hits: number) => returns.tiers.find((t) => t.hits === hits)?.payout ?? 0
-  const perCard = returns.probabilityScope === 'per-ticket' ? ' (por cartão premiado)' : ''
-  const small = [payout(11), payout(13)]
-  return [
-    {
-      emoji: '😞',
-      title: 'Não ganhar nada',
-      probability: 1 - odds.atLeast11,
-      money: `perde os ${formatBRL(cost)}`,
-      tone: 'neg',
-    },
-    {
-      emoji: '🙂',
-      title: 'Prêmio pequeno (11, 12 ou 13 pontos)',
-      probability: odds.atLeast11 - odds.atLeast14,
-      money: `recebe de ${formatBRL(small[0])} a ${formatBRL(small[1])}${perCard}`,
-      tone: 'mid',
-    },
-    {
-      emoji: '🤩',
-      title: '14 pontos',
-      probability: odds.atLeast14 - odds.jackpot,
-      money: `recebe cerca de ${formatBRL(payout(14))}${perCard}`,
-      tone: 'pos',
-    },
-    {
-      emoji: '🏆',
-      title: '15 pontos (prêmio máximo)',
-      probability: odds.jackpot,
-      money: `recebe cerca de ${formatBRL(payout(15))}`,
-      tone: 'pos',
-    },
-  ]
-}
+import { buildOutcomes } from '../lib/odds'
 
 function inWords(p: number): string {
+  if (p <= 0) return 'praticamente nunca'
   if (p >= 0.01) return `${formatInt(p * 100)} de cada 100 vezes`
   return `1 vez a cada ${formatInt(1 / p)} jogadas`
 }

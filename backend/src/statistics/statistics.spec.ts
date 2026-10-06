@@ -28,6 +28,19 @@ describe('statistics', () => {
   it('uniform synthetic data passes chi-square', () => {
     expect(uniformityTest(syntheticDraws(2000)).isUniform).toBe(true);
   });
+  it('chi-square uses the without-replacement variance (mean ≈ df under H0)', () => {
+    const stats = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => uniformityTest(syntheticDraws(1000, seed)).chiSquare);
+    const mean = stats.reduce((a, b) => a + b, 0) / stats.length;
+    // O Pearson ingênuo daria ≈ 0,4·24 ≈ 9,6 e nunca rejeitaria a uniformidade.
+    expect(mean).toBeGreaterThan(14);
+    expect(mean).toBeLessThan(36);
+  });
+  it('chi-square detects a biased number', () => {
+    const draws = syntheticDraws(2000).map((d) =>
+      d.numbers.includes(1) || !d.numbers.includes(2) ? d : { ...d, numbers: d.numbers.map((n) => (n === 2 ? 1 : n)) },
+    );
+    expect(uniformityTest(draws).isUniform).toBe(false);
+  });
   it('normalCdf', () => {
     expect(normalCdf(0)).toBeCloseTo(0.5, 6);
     expect(normalCdf(1.96)).toBeCloseTo(0.975, 3);

@@ -21,6 +21,9 @@ describe('API (e2e)', () => {
         findAll: async () => draws,
         findPage: async () => ({ items: draws.slice(0, 2), total: draws.length }),
         getSyncStatus: () => ({ state: 'idle' }),
+        loadModelWeights: async () => null,
+        saveModelWeights: async () => undefined,
+        saveChecks: async () => undefined,
       })
       .compile();
     app = moduleRef.createNestApplication();
@@ -52,6 +55,15 @@ describe('API (e2e)', () => {
     const res = await request(app.getHttpServer()).post('/api/plan').send({ budget: 56 }).expect(200);
     expect(res.body.recommended.kind).toBe('multiple-games');
     expect(res.body.recommended.games.length).toBe(16);
+  });
+
+  it('POST /api/check confere apostas e recalibra', async () => {
+    await request(app.getHttpServer()).post('/api/check').send({ bets: [[1, 2, 3]] }).expect(400);
+    const last = draws[draws.length - 1];
+    const res = await request(app.getHttpServer()).post('/api/check').send({ bets: [last.numbers, draws[0].numbers] }).expect(200);
+    expect(res.body.bets[0].hits).toBe(15);
+    expect(res.body.bets).toHaveLength(2);
+    expect(res.body.signals).toHaveLength(5);
   });
 
   it('GET /api/stats/summary', async () => {

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { BacktestDto, PlanDto, SuggestDto } from './analysis.dto';
+import { BacktestDto, CheckDto, PlanDto, SuggestDto } from './analysis.dto';
 import { AnalysisService } from './analysis.service';
 
 @ApiTags('analysis')
@@ -32,6 +32,19 @@ export class AnalysisController {
   @ApiOperation({ summary: 'Recomenda quantas dezenas comprar para um orçamento, com os números' })
   plan(@Body() dto: PlanDto) {
     return this.analysis.plan(dto);
+  }
+
+  @Post('check')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Confere 1..N apostas, mostra o prêmio, onde cada sinal errou e recalibra os pesos' })
+  check(@Body() dto: CheckDto) {
+    return this.analysis.check(dto);
+  }
+
+  @Get('model')
+  @ApiOperation({ summary: 'Pesos do ensemble em uso (padrão + calibração)' })
+  model() {
+    return this.analysis.currentWeights();
   }
 
   @Post('backtest')

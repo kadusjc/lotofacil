@@ -9,7 +9,8 @@ import { formatBRL, formatPct } from '../lib/format'
 export function BacktestPage() {
   const [betSize, setBetSize] = useState(15)
   const [testSize, setTestSize] = useState(100)
-  const run = useMutation({ mutationFn: () => api.backtest(betSize, testSize) })
+  const [budget, setBudget] = useState('')
+  const run = useMutation({ mutationFn: () => api.backtest(betSize, testSize, budget ? Number(budget) : undefined) })
   const r = run.data
 
   return (
@@ -22,7 +23,7 @@ export function BacktestPage() {
         <div className="row wrap">
           <label className="field">
             <span>Dezenas</span>
-            <select value={betSize} onChange={(e) => setBetSize(Number(e.target.value))}>
+            <select value={betSize} onChange={(e) => setBetSize(Number(e.target.value))} disabled={!!budget}>
               {[15, 16, 17, 18, 19, 20].map((n) => (
                 <option key={n}>{n}</option>
               ))}
@@ -36,6 +37,10 @@ export function BacktestPage() {
               ))}
             </select>
           </label>
+          <label className="field">
+            <span>Ou orçamento por concurso (R$)</span>
+            <input type="number" min={3.5} step="0.5" placeholder="ex.: 56" value={budget} onChange={(e) => setBudget(e.target.value)} />
+          </label>
           <button className="primary" onClick={() => run.mutate()} disabled={run.isPending}>
             {run.isPending ? 'Rodando…' : 'Rodar backtest'}
           </button>
@@ -48,16 +53,20 @@ export function BacktestPage() {
       {r && (
         <>
           <div className="panel highlight">
+            <p className="eyebrow">
+              Testado: {r.plan}
+              {r.budget ? ` (${formatBRL(r.budget)} por concurso)` : ''}
+            </p>
             <p>{r.verdict}</p>
           </div>
           <div className="kpis">
             <div className="panel kpi">
-              <span className="muted small">Média de acertos</span>
+              <span className="muted small">Média de acertos{r.tickets > 1 ? ' por bilhete' : ''}</span>
               <strong>{r.meanHits.toFixed(2)}</strong>
               <span className="muted small">acaso: {r.expectedRandomMeanHits.toFixed(2)}</span>
             </div>
             <div className="panel kpi">
-              <span className="muted small">Premiados (11+)</span>
+              <span className="muted small">Concursos premiados (11+)</span>
               <strong>{r.atLeast11}</strong>
               <span className="muted small">de {r.testSize}</span>
             </div>
@@ -93,8 +102,8 @@ export function BacktestPage() {
               <thead>
                 <tr>
                   <th>Concurso</th>
-                  <th>Jogo sugerido</th>
-                  <th>Acertos</th>
+                  <th>{r.tickets > 1 ? 'Melhor bilhete' : 'Jogo sugerido'}</th>
+                  <th>Acertos{r.tickets > 1 ? ' (melhor)' : ''}</th>
                   <th>Prêmio</th>
                 </tr>
               </thead>
@@ -103,7 +112,7 @@ export function BacktestPage() {
                   <tr key={row.concurso}>
                     <td>{row.concurso}</td>
                     <td>
-                      <NumberList numbers={row.game} />
+                      <NumberList numbers={row.games[row.ticketHits.indexOf(row.hits)] ?? row.game} />
                     </td>
                     <td>{row.hits}</td>
                     <td>{row.prize ? formatBRL(row.prize) : '—'}</td>

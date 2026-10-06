@@ -210,7 +210,9 @@ Base: `http://localhost:3100/api`. A documentação interativa fica em **http://
 | GET | `/probabilities` | Tabela exata de 15 a 20 dezenas |
 | POST | `/plan` `{budget}` | **Quantas dezenas comprar + os números**, com probabilidades 0–100% (`odds`) e retorno em R$ (`returns`) |
 | POST | `/suggestions` `{betSize, games, seed?, weights?}` | Jogos sugeridos |
-| POST | `/backtest` `{betSize, testSize, weights?}` | Backtest |
+| POST | `/backtest` `{betSize, testSize, budget?, weights?}` | Backtest walk-forward; com `budget` testa o plano recomendado (ex.: 56 → 16 bilhetes) |
+| POST | `/check` `{bets: number[][], concurso?}` | Confere 1..N apostas (15–20 dezenas), prêmio, onde cada sinal errou e recalibra os pesos (salvos no Neo4j) |
+| GET | `/model` | Pesos do ensemble em uso (padrão + calibração) |
 
 ```bash
 curl -X POST localhost:3100/api/plan -H 'content-type: application/json' -d '{"budget":56}'

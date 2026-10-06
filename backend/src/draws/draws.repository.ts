@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Draw, PrizeTier } from '../common/lottery';
 import { drawEmbedding } from '../embeddings/embeddings';
 import { DRAW_VECTOR_INDEX, Neo4jService } from '../neo4j/neo4j.service';
+import { StrategyWeights } from '../strategy/strategy.engine';
 
 /**
  * Modelo do grafo:
@@ -58,12 +59,16 @@ export class DrawsRepository {
     }
   }
 
+  /**
+   * Liga apenas concursos consecutivos (n → n+1). Ligar "o próximo existente" criaria arestas
+   * erradas sobre lacunas (concursos que falharam no download) que nunca seriam removidas.
+   */
   async linkSequence(): Promise<void> {
     await this.neo4j.write(
-      `MATCH (d:Draw) WITH d ORDER BY d.concurso
-       WITH collect(d) AS ds
-       UNWIND range(0, size(ds) - 2) AS i
-       WITH ds[i] AS a, ds[i + 1] AS b
+      `MATCH (a:Draw)-[r:NEXT]->(b:Draw) WHERE b.concurso <> a.concurso + 1 DELETE r`,
+    );
+    await this.neo4j.write(
+      `MATCH (a:Draw) MATCH (b:Draw {concurso: a.concurso + 1})
        MERGE (a)-[:NEXT]->(b)`,
     );
   }
@@ -131,6 +136,32 @@ export class DrawsRepository {
       { limit, orderBy },
     );
     return result.records.map((r) => ({ a: r.get('a'), b: r.get('b'), count: r.get('count'), ppmi: r.get('ppmi') }));
+  }
+
+  /** Pesos calibrados do ensemble: (:Model {name:'strategy', weights, basedOnConcurso, updatedAt}). */
+  async loadModelWeights(): Promise<Partial<StrategyWeights> | null> {
+    const result = await this.neo4j.read<{ w: string | null }>(`MATCH (m:Model {name: 'strategy'}) RETURN m.weights AS w`);
+    const raw = result.records[0]?.get('w');
+    return raw ? (JSON.parse(raw) as Partial<StrategyWeights>) : null;
+  }
+
+  async saveModelWeights(weights: Partial<StrategyWeights>, basedOnConcurso: number): Promise<void> {
+    await this.neo4j.write(
+      `MERGE (m:Model {name: 'strategy'})
+       SET m.weights = $weights, m.basedOnConcurso = toInteger($basedOnConcurso), m.updatedAt = datetime()`,
+      { weights: JSON.stringify(weights), basedOnConcurso },
+    );
+  }
+
+  /** Histórico de conferências: (:Bet {numbers, hits, prize, checkedAt})-[:CHECKED_AGAINST]->(:Draw). */
+  async saveChecks(concurso: number, bets: Array<{ numbers: number[]; hits: number; prize: number }>): Promise<void> {
+    await this.neo4j.write(
+      `MATCH (d:Draw {concurso: toInteger($concurso)})
+       UNWIND $bets AS b
+       CREATE (:Bet {numbers: [x IN b.numbers | toInteger(x)], hits: toInteger(b.hits), prize: b.prize, checkedAt: datetime()})
+              -[:CHECKED_AGAINST]->(d)`,
+      { concurso, bets },
+    );
   }
 
   private toDraw(raw: Record<string, unknown>): Draw {

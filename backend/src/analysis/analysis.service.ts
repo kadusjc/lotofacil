@@ -1,13 +1,15 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { existsSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { Draw } from '../common/lottery';
+import { Semaphore } from '../common/concurrency';
 import { AppConfig } from '../config/configuration';
 import { DrawsService } from '../draws/draws.service';
-import { runBacktest } from '../backtest/backtest.engine';
-import { multipleGamesAtLeast14, planBudget, planOdds, BetPlan, PlanOdds } from '../strategy/bet-planner';
 import { probabilityTable } from '../strategy/probability';
-import { averagePrizes, planReturns, PlanReturns } from '../strategy/returns';
-import { StrategyWeights, suggestGames, SuggestedGame } from '../strategy/strategy.engine';
+import { DEFAULT_WEIGHTS, StrategyWeights } from '../strategy/strategy.engine';
 import {
   distribution,
   gameProfile,
@@ -16,18 +18,19 @@ import {
   repeatsFromPrevious,
   uniformityTest,
 } from '../statistics/statistics';
-import { BacktestDto, PlanDto, SuggestDto } from './analysis.dto';
+import { BacktestDto, CheckDto, PlanDto, SuggestDto, WeightsDto } from './analysis.dto';
+import { TaskArgs, TaskName, TaskResult, TASKS } from './analysis.tasks';
 
-export interface PlanWithGames extends BetPlan {
-  games: SuggestedGame[];
-  odds: PlanOdds;
-  returns: PlanReturns;
-}
-
-const PRIZE_WINDOW = 50;
+// Compilado (dist) existe o .js do worker; rodando via ts-node/ts-jest a tarefa roda inline.
+const WORKER_PATH = join(__dirname, 'analysis.worker.js');
 
 @Injectable()
 export class AnalysisService {
+  private readonly useWorker = existsSync(WORKER_PATH);
+  /** Limita threads simultâneas: requisições excedentes esperam na fila em vez de saturar a CPU. */
+  private readonly slots = new Semaphore(Math.max(1, availableParallelism() - 1));
+  private learned: Partial<StrategyWeights> | null | undefined;
+
   constructor(
     private readonly draws: DrawsService,
     private readonly config: ConfigService<AppConfig, true>,
@@ -63,60 +66,80 @@ export class AnalysisService {
   }
 
   async suggest(dto: SuggestDto) {
-    const draws = await this.requireDraws();
-    return suggestGames(draws, {
+    return this.run('suggest', await this.requireDraws(), {
       betSize: dto.betSize,
       games: dto.games,
       seed: dto.seed,
-      weights: dto.weights as Partial<StrategyWeights>,
+      weights: await this.weights(dto.weights),
     });
   }
 
-  /** Recomenda quantas dezenas comprar para o orçamento e já gera os números de cada opção. */
   async plan(dto: PlanDto) {
-    const draws = await this.requireDraws();
-    const recommendation = planBudget(dto.budget, this.betPrice);
-    const weights = dto.weights as Partial<StrategyWeights>;
-    const prizes = averagePrizes(draws, PRIZE_WINDOW);
-
-    const plans: PlanWithGames[] = recommendation.plans.map((plan) => {
-      const { games } = suggestGames(draws, {
-        betSize: plan.betSize,
-        games: plan.tickets,
-        weights,
-        // Sobreposição <= 12 torna os eventos "14+" disjuntos: chance total = soma exata.
-        maxOverlap: plan.kind === 'multiple-games' ? 11 : undefined,
-        candidates: plan.kind === 'multiple-games' ? Math.max(20000, plan.tickets * 1500) : 20000,
-      });
-      const odds = planOdds(games.map((g) => g.numbers), plan.betSize);
-      const returns = planReturns(plan.betSize, games.length, plan.kind === 'multiple-games' ? games.length * this.betPrice : plan.cost, prizes, PRIZE_WINDOW);
-      if (plan.kind !== 'multiple-games') return { ...plan, games, odds, returns };
-      const prob = multipleGamesAtLeast14(games.map((g) => g.numbers));
-      return { ...plan, tickets: games.length, cost: games.length * this.betPrice, probAtLeast14: prob, oneIn: Math.round(1 / prob.estimate), games, odds, returns };
+    return this.run('plan', await this.requireDraws(), {
+      budget: dto.budget,
+      betPrice: this.betPrice,
+      weights: await this.weights(dto.weights),
     });
-
-    const recommended = plans.reduce<PlanWithGames | null>(
-      (best, p) => (!best || p.probAtLeast14.lower > best.probAtLeast14.lower ? p : best),
-      null,
-    );
-    return {
-      budget: recommendation.budget,
-      betPrice: recommendation.betPrice,
-      basedOnConcurso: draws[draws.length - 1].concurso,
-      rationale: recommendation.rationale,
-      recommended,
-      plans,
-    };
   }
 
   async backtest(dto: BacktestDto) {
-    const draws = await this.requireDraws();
-    return runBacktest(draws, {
+    return this.run('backtest', await this.requireDraws(), {
       betSize: dto.betSize,
       testSize: dto.testSize,
+      budget: dto.budget,
       betPrice: this.betPrice,
-      weights: dto.weights as Partial<StrategyWeights>,
+      weights: await this.weights(dto.weights),
     });
+  }
+
+  /** Pesos em uso: padrão, sobrescritos pelos calibrados e, por fim, pelos enviados na requisição. */
+  async currentWeights(): Promise<StrategyWeights> {
+    return { ...DEFAULT_WEIGHTS, ...(await this.weights(undefined)) };
+  }
+
+  /** Confere apostas contra um concurso (padrão: o último), explica os erros e recalibra os pesos. */
+  async check(dto: CheckDto) {
+    const draws = await this.requireDraws();
+    const concurso = dto.concurso ?? draws[draws.length - 1].concurso;
+    if (!draws.some((d) => d.concurso === concurso)) throw new NotFoundException(`Concurso ${concurso} não encontrado`);
+    const result = await this.run('check', draws, {
+      bets: dto.bets,
+      concurso,
+      betPrice: this.betPrice,
+      previousWeights: await this.currentWeights(),
+    });
+    await this.draws.saveChecks(concurso, result.bets);
+    await this.draws.saveModelWeights(result.learnedWeights, draws[draws.length - 1].concurso);
+    this.learned = result.learnedWeights;
+    return result;
+  }
+
+  private async weights(override: WeightsDto | undefined): Promise<Partial<StrategyWeights>> {
+    if (this.learned === undefined) this.learned = sanitizeWeights(await this.draws.loadModelWeights());
+    // Campos ausentes do DTO chegam como undefined e não podem apagar os pesos calibrados.
+    const explicit = Object.fromEntries(Object.entries(override ?? {}).filter(([, v]) => v !== undefined));
+    return { ...this.learned, ...explicit };
+  }
+
+  /** Roda a tarefa num worker thread (não bloqueia a API); erros de domínio viram 400. */
+  private async run<K extends TaskName>(task: K, draws: Draw[], args: TaskArgs<K>): Promise<TaskResult<K>> {
+    try {
+      if (!this.useWorker) return (TASKS[task] as (d: Draw[], a: TaskArgs<K>) => TaskResult<K>)(draws, args);
+      return await this.slots.run(() => new Promise<TaskResult<K>>((resolve, reject) => {
+        const worker = new Worker(WORKER_PATH, { workerData: { task, draws, args } });
+        worker.once('message', (msg: { ok: true; result: TaskResult<K> } | { ok: false; name: string; message: string }) => {
+          if (msg.ok) return resolve(msg.result);
+          reject(msg.name === 'RangeError' ? new RangeError(msg.message) : new Error(msg.message));
+        });
+        worker.once('error', reject);
+        worker.once('exit', (code) => code !== 0 && reject(new Error(`Worker de análise saiu com código ${code}`)));
+      }));
+    } catch (error) {
+      if (error instanceof RangeError || /insuficiente/i.test((error as Error).message)) {
+        throw new BadRequestException((error as Error).message);
+      }
+      throw error;
+    }
   }
 
   private async requireDraws(): Promise<Draw[]> {
@@ -126,4 +149,13 @@ export class AnalysisService {
     }
     return draws;
   }
+}
+
+/** Pesos lidos do banco: mantém só sinais conhecidos com valores finitos e não negativos. */
+function sanitizeWeights(raw: Partial<StrategyWeights> | null): Partial<StrategyWeights> | null {
+  if (!raw) return null;
+  const known = Object.keys(DEFAULT_WEIGHTS) as Array<keyof StrategyWeights>;
+  return Object.fromEntries(
+    known.filter((k) => Number.isFinite(raw[k]) && (raw[k] as number) >= 0).map((k) => [k, raw[k]]),
+  ) as Partial<StrategyWeights>;
 }

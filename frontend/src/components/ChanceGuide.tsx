@@ -1,29 +1,25 @@
 import { formatBRL, formatChance, formatOneIn, formatInt } from '../lib/format'
+import { DEFAULT_BET_PRICE, spreadGamesChance, TOTAL_COMBINATIONS, WINNING_14_PLUS } from '../lib/odds'
 
-const TOTAL_COMBINATIONS = 3_268_760
-/** Combinações de 15 que fazem 14 ou 15 pontos contra um sorteio: C(15,14)·C(10,1) + 1. */
-const WINNING_14_PLUS = 151
-const BET_PRICE = 3.5
-const LADDER = [3.5, 56, 476, 1000, 3500]
+/** Degraus da tabela em quantidade de jogos de 15 (o valor acompanha o preço configurado). */
+const LADDER_GAMES = [1, 16, 136, 300, 1000]
 
-/** Com jogos espalhados (≤ 12 dezenas em comum), as chances de 14+ somam exatamente. */
-export function spreadGamesChance(budget: number) {
-  const games = Math.floor(budget / BET_PRICE + 1e-9)
-  return {
-    games,
-    atLeast14: Math.min(1, (games * WINNING_14_PLUS) / TOTAL_COMBINATIONS),
-    jackpot: Math.min(1, games / TOTAL_COMBINATIONS),
-  }
+interface Props {
+  onPickBudget?: (budget: number) => void
+  betPrice?: number
 }
 
 /** Explica, de forma direta, o que muda (e o que não muda) a chance de ganhar. */
-export function ChanceGuide({ onPickBudget }: { onPickBudget?: (budget: number) => void }) {
+export function ChanceGuide({ onPickBudget, betPrice = DEFAULT_BET_PRICE }: Props) {
+  const ladder = LADDER_GAMES.map((games) => Number((games * betPrice).toFixed(2)))
+  const top = ladder[ladder.length - 1]
+  const topChance = spreadGamesChance(top, betPrice).atLeast14
   return (
     <section className="panel guide" aria-labelledby="guide-title">
       <h2 id="guide-title">Como aumentar sua chance de ganhar</h2>
       <p className="guide-lead">
-        <strong>Todo jogo de 15 dezenas tem a mesma chance:</strong> 1 em {formatInt(TOTAL_COMBINATIONS)} de fazer 15 pontos e 1 em 21.647
-        de fazer 14 ou 15. Nenhuma análise, IA ou linguagem de programação muda isso, porque o sorteio não tem memória.
+        <strong>Todo jogo de 15 dezenas tem a mesma chance:</strong> 1 em {formatInt(TOTAL_COMBINATIONS)} de fazer 15 pontos e 1 em{' '}
+        {formatInt(TOTAL_COMBINATIONS / WINNING_14_PLUS)} de fazer 14 ou 15. Nenhuma análise, IA ou linguagem de programação muda isso, porque o sorteio não tem memória.
       </p>
 
       <div className="guide-cards">
@@ -49,7 +45,7 @@ export function ChanceGuide({ onPickBudget }: { onPickBudget?: (budget: number) 
         </div>
       </div>
 
-      <h4>Quanto mais você gasta, maior a chance (e o retorno médio continua cerca de −54%)</h4>
+      <h4>Quanto mais você gasta, maior a chance (e o retorno médio continua negativo)</h4>
       <table className="guide-table">
         <thead>
           <tr>
@@ -61,8 +57,8 @@ export function ChanceGuide({ onPickBudget }: { onPickBudget?: (budget: number) 
           </tr>
         </thead>
         <tbody>
-          {LADDER.map((budget) => {
-            const c = spreadGamesChance(budget)
+          {ladder.map((budget) => {
+            const c = spreadGamesChance(budget, betPrice)
             return (
               <tr key={budget} className={onPickBudget ? 'clickable' : undefined} onClick={() => onPickBudget?.(budget)}>
                 <td><strong>{formatBRL(budget)}</strong></td>
@@ -82,7 +78,7 @@ export function ChanceGuide({ onPickBudget }: { onPickBudget?: (budget: number) 
         </tbody>
       </table>
       <p className="muted small">
-        As barras estão na escala real de 0 a 100%. Mesmo gastando R$ 3.500, a chance de 14+ fica abaixo de 5%.
+        As barras estão na escala real de 0 a 100%. Mesmo gastando {formatBRL(top)}, a chance de 14+ fica em {formatChance(topChance)}.
         {onPickBudget && ' Clique numa linha para usar esse valor.'}
       </p>
     </section>

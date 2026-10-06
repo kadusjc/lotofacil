@@ -127,6 +127,9 @@ export interface ProbabilityRow {
 
 export interface BacktestResult {
   betSize: number
+  tickets: number
+  budget: number | null
+  plan: string
   testSize: number
   meanHits: number
   expectedRandomMeanHits: number
@@ -138,7 +141,7 @@ export interface BacktestResult {
   totalPrize: number
   roi: number
   verdict: string
-  rows: Array<{ concurso: number; game: number[]; drawn: number[]; hits: number; prize: number }>
+  rows: Array<{ concurso: number; game: number[]; games: number[][]; drawn: number[]; hits: number; ticketHits: number[]; prize: number }>
 }
 
 export interface SimilarDraw {
@@ -164,4 +167,25 @@ export interface Paginated<T> {
   total: number
   page: number
   pageSize: number
+}
+
+export type Signal = 'long' | 'recent' | 'momentum' | 'delay' | 'analog'
+
+export interface BetCheck {
+  numbers: number[]
+  betSize: number
+  cost: number
+  hits: number
+  hitNumbers: number[]
+  prize: number
+}
+
+export interface CheckResult {
+  draw: Draw
+  bets: BetCheck[]
+  totals: { cost: number; prize: number; net: number; winningBets: number }
+  missedDrawn: number[]
+  wrongPicks: number[]
+  signals: Array<{ signal: Signal; top15Hits: number; meanTop15Hits: number; previousWeight: number; newWeight: number }>
+  calibrationWindow: number
 }

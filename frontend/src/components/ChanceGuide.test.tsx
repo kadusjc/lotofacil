@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { ChanceGuide, spreadGamesChance } from './ChanceGuide'
+import { spreadGamesChance } from '../lib/odds'
+import { ChanceGuide } from './ChanceGuide'
 
 describe('ChanceGuide', () => {
   it('computes exact 14+ chance for spread games', () => {

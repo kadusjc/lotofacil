@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { BetPlan } from '../api/types'
-import { buildOutcomes, PlainWinnings } from './PlainWinnings'
+import { buildOutcomes } from '../lib/odds'
+import { PlainWinnings } from './PlainWinnings'
 
 const plan = {
   kind: 'single-bet', betSize: 15, tickets: 1, cost: 3.5, oneIn: 21647, description: '', games: [],

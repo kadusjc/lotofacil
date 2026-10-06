@@ -21,4 +21,12 @@ describe('backtest', () => {
     expect(r.hitDistribution.reduce((a, d) => a + d.observed, 0)).toBe(40);
     expect(r.totalCost).toBeCloseTo(40 * 3.5);
   });
+  it('budget mode tests the recommended multi-ticket plan', () => {
+    const r = runBacktest(draws, { testSize: 5, budget: 14, candidates: 400 });
+    expect(r.tickets).toBe(4);
+    expect(r.rows[0].games).toHaveLength(4);
+    expect(r.hitDistribution.reduce((a, d) => a + d.observed, 0)).toBe(20);
+    expect(r.totalCost).toBeCloseTo(5 * 4 * 3.5);
+    expect(() => runBacktest(draws, { testSize: 5, budget: 1 })).toThrow(RangeError);
+  });
 });

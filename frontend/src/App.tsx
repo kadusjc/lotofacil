@@ -1,16 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
-import { ErrorBox } from './components/Feedback'
+import { ErrorBox, Loading } from './components/Feedback'
 import { NumberList } from './components/GameCard'
 import { formatDate } from './lib/format'
-import { BacktestPage } from './pages/BacktestPage'
-import { HistoryPage } from './pages/HistoryPage'
 import { PlannerPage } from './pages/PlannerPage'
-import { StatsPage } from './pages/StatsPage'
+
+// Abas secundárias (e o recharts) só são baixadas quando abertas.
+const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({ default: m.StatsPage })))
+const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
+const CheckPage = lazy(() => import('./pages/CheckPage').then((m) => ({ default: m.CheckPage })))
+const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ default: m.HistoryPage })))
 
 const TABS = {
   planner: { label: 'Sugerir jogo', Page: PlannerPage },
+  check: { label: 'Conferir apostas', Page: CheckPage },
   stats: { label: 'Estatísticas', Page: StatsPage },
   backtest: { label: 'Backtest', Page: BacktestPage },
   history: { label: 'Histórico', Page: HistoryPage },
@@ -43,7 +47,9 @@ export default function App() {
         ))}
       </nav>
       <main>
-        <Page />
+        <Suspense fallback={<Loading />}>
+          <Page />
+        </Suspense>
       </main>
       <footer className="muted small">
         Cada combinação de 15 dezenas tem exatamente a mesma chance (1 em 3.268.760) de ser sorteada; nenhuma análise de
@@ -57,18 +63,23 @@ export default function App() {
 function SyncBar() {
   const queryClient = useQueryClient()
   const latest = useQuery({ queryKey: ['latest'], queryFn: api.latest })
-  const [polling, setPolling] = useState(false)
-  const status = useQuery({ queryKey: ['sync'], queryFn: api.syncStatus, refetchInterval: polling ? 1500 : false })
-  const start = useMutation({ mutationFn: api.startSync, onSuccess: () => setPolling(true) })
+  const status = useQuery({
+    queryKey: ['sync'],
+    queryFn: api.syncStatus,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? 1500 : false),
+  })
+  const start = useMutation({
+    mutationFn: api.startSync,
+    onSuccess: (data) => queryClient.setQueryData(['sync'], data),
+  })
 
+  // Ao terminar uma sincronização, recarrega tudo que depende dos concursos.
   const state = status.data?.state
+  const previousState = useRef(state)
   useEffect(() => {
-    if (state === 'running') setPolling(true)
-    if (polling && (state === 'done' || state === 'error')) {
-      setPolling(false)
-      void queryClient.invalidateQueries()
-    }
-  }, [state, polling, queryClient])
+    if (previousState.current === 'running' && state !== 'running') void queryClient.invalidateQueries()
+    previousState.current = state
+  }, [state, queryClient])
 
   const running = state === 'running' || start.isPending
   return (

@@ -9,8 +9,9 @@ import { OddsMeter } from '../components/OddsMeter'
 import { PlainWinnings } from '../components/PlainWinnings'
 import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
 import { formatBRL, formatOneIn } from '../lib/format'
+import { DEFAULT_BET_PRICE } from '../lib/odds'
 
-const BUDGET_PRESETS = [3.5, 56, 100, 476, 1000]
+const BUDGET_PRESETS = [56, 100, 476, 1000]
 
 export function PlannerPage() {
   const [budget, setBudget] = useState(56)
@@ -29,7 +30,7 @@ export function PlannerPage() {
 
   return (
     <section className="stack">
-      <ChanceGuide onPickBudget={pickBudget} />
+      <ChanceGuide onPickBudget={pickBudget} betPrice={probabilities.data?.betPrice} />
       <form className="panel row wrap" onSubmit={submit}>
         <label className="field">
           <span>Quanto quer gastar?</span>
@@ -43,7 +44,7 @@ export function PlannerPage() {
           />
         </label>
         <div className="row wrap">
-          {BUDGET_PRESETS.map((v) => (
+          {[probabilities.data?.betPrice ?? DEFAULT_BET_PRICE, ...BUDGET_PRESETS].map((v) => (
             <button type="button" key={v} className="chip" onClick={() => setBudget(v)}>
               {formatBRL(v)}
             </button>

@@ -228,7 +228,8 @@ export function suggestGames(draws: Draw[], options: StrategyOptions = {}): Stra
   const scoreByNumber = new Map(scores.map((s) => [s.number, s.score]));
 
   const seen = new Set<string>();
-  const candidates: SuggestedGame[] = [];
+  const fitting: SuggestedGame[] = [];
+  const outOfProfile: SuggestedGame[] = [];
   for (let i = 0; i < candidateCount; i++) {
     const numbers = sortAsc(weightedSample(samplingWeights, betSize, rng).map((idx) => idx + 1));
     const key = numbers.join('-');
@@ -236,19 +237,16 @@ export function suggestGames(draws: Draw[], options: StrategyOptions = {}): Stra
     seen.add(key);
     const profile = gameProfile(numbers);
     const repeatsFromLast = numbers.filter((n) => lastNumbers.has(n)).length;
-    // Os filtros de perfil só fazem sentido para jogos de 15 dezenas (mesmo tamanho do sorteio).
-    if (betSize === DRAWN_PER_CONTEST && !fitsProfile(profile, repeatsFromLast, bounds)) continue;
     const cohesion = gameCohesion(numbers, embeddings);
     const meanScore = numbers.reduce((acc, n) => acc + (scoreByNumber.get(n) ?? 0), 0) / betSize;
-    candidates.push({
-      numbers,
-      score: meanScore + weights.cohesion * cohesion,
-      cohesion,
-      profile,
-      repeatsFromLast,
-    });
+    const candidate = { numbers, score: meanScore + weights.cohesion * cohesion, cohesion, profile, repeatsFromLast };
+    // Os filtros de perfil só fazem sentido para jogos de 15 dezenas (mesmo tamanho do sorteio).
+    const fits = betSize !== DRAWN_PER_CONTEST || fitsProfile(profile, repeatsFromLast, bounds);
+    (fits ? fitting : outOfProfile).push(candidate);
   }
-  candidates.sort((a, b) => b.score - a.score);
+  const byScore = (a: SuggestedGame, b: SuggestedGame) => b.score - a.score;
+  // Fora do perfil só entram como reserva, garantindo que sempre haja jogos suficientes.
+  const candidates = [...fitting.sort(byScore), ...outOfProfile.sort(byScore)];
 
   // Seleção gulosa com diversidade; relaxa a sobreposição se não houver candidatos suficientes.
   let games: SuggestedGame[] = [];

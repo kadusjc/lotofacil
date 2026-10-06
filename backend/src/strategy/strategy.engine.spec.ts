@@ -40,6 +40,10 @@ describe('strategy engine', () => {
     expect(g.profile.sum).toBeGreaterThanOrEqual(r.profileBounds.sum[0]);
     expect(g.profile.sum).toBeLessThanOrEqual(r.profileBounds.sum[1]);
   });
+  it('always returns the requested games even when few candidates fit the profile', () => {
+    const r = suggestGames(draws, { candidates: 5, games: 5, seed: 9 });
+    expect(r.games).toHaveLength(5);
+  });
   it('supports bigger bets', () => {
     const r = suggestGames(draws, { betSize: 18, candidates: 1000 });
     expect(isValidGame(r.games[0].numbers, 18)).toBe(true);

@@ -1,5 +1,6 @@
 import type {
   BacktestResult,
+  CheckResult,
   Draw,
   Paginated,
   PlanResponse,
@@ -41,7 +42,9 @@ export const api = {
   probabilities: () => request<{ betPrice: number; rows: ProbabilityRow[] }>('/probabilities'),
   plan: (budget: number) => post<PlanResponse>('/plan', { budget }),
   suggest: (betSize: number, games: number) => post<SuggestionResponse>('/suggestions', { betSize, games }),
-  backtest: (betSize: number, testSize: number) => post<BacktestResult>('/backtest', { betSize, testSize }),
+  backtest: (betSize: number, testSize: number, budget?: number) =>
+    post<BacktestResult>('/backtest', { betSize, testSize, budget }),
+  check: (bets: number[][], concurso?: number) => post<CheckResult>('/check', { bets, concurso }),
   startSync: () => post<SyncStatus>('/sync', {}),
   syncStatus: () => request<SyncStatus>('/sync/status'),
 }
