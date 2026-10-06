@@ -1,14 +1,14 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api } from '../api/client'
-import type { BetPlan } from '../api/types'
+import type { BetPlan, CheckResult } from '../api/types'
 import { ChanceGuide } from '../components/ChanceGuide'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
 import { OddsMeter } from '../components/OddsMeter'
 import { PlainWinnings } from '../components/PlainWinnings'
 import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
-import { formatBRL, formatOneIn } from '../lib/format'
+import { formatBRL, formatDate, formatOneIn } from '../lib/format'
 import { DEFAULT_BET_PRICE } from '../lib/odds'
 
 const BUDGET_PRESETS = [56, 100, 476, 1000]
@@ -17,15 +17,26 @@ export function PlannerPage() {
   const [budget, setBudget] = useState(56)
   const plan = useMutation({ mutationFn: api.plan })
   const probabilities = useQuery({ queryKey: ['probabilities'], queryFn: api.probabilities })
+  const queryClient = useQueryClient()
+  const verify = useMutation({
+    mutationFn: (plan: BetPlan) => api.checkOfficial(plan.games.map((g) => g.numbers)),
+    // A conferência pode ter importado um concurso novo.
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['latest'] }),
+  })
+
+  const requestPlan = (value: number) => {
+    verify.reset()
+    plan.mutate(value)
+  }
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    plan.mutate(budget)
+    requestPlan(budget)
   }
 
   const pickBudget = (value: number) => {
     setBudget(value)
-    plan.mutate(value)
+    requestPlan(value)
   }
 
   return (
@@ -74,6 +85,19 @@ export function PlannerPage() {
                 a chance, só aumentando o valor apostado.
               </p>
               <PlainWinnings plan={plan.data.recommended} />
+              <div className="row wrap">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={verify.isPending}
+                  onClick={() => plan.data?.recommended && verify.mutate(plan.data.recommended)}
+                >
+                  {verify.isPending ? 'Consultando a Caixa…' : 'Conferir última sugestão'}
+                </button>
+                <span className="muted small">Compara esta sugestão com o resultado mais recente do site oficial da Caixa.</span>
+              </div>
+              <ErrorBox error={verify.error} />
+              {verify.data && <SuggestionCheck result={verify.data} />}
               <details className="more">
                 <summary>Ver detalhes técnicos (probabilidades e valores por faixa)</summary>
                 <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
@@ -120,6 +144,43 @@ export function PlannerPage() {
         </details>
       )}
     </section>
+  )
+}
+
+/** Resultado hipotético: quanto a sugestão teria acertado e ganho no último concurso oficial. */
+function SuggestionCheck({ result: r }: { result: CheckResult }) {
+  const best = Math.max(...r.bets.map((b) => b.hits))
+  return (
+    <div className="panel stack-sm" aria-label="Conferência da sugestão">
+      <p className="eyebrow">
+        Resultado oficial · concurso {r.draw.concurso} · {formatDate(r.draw.date)}
+      </p>
+      <NumberList numbers={r.draw.numbers} />
+      <h3>
+        {r.totals.prize > 0
+          ? `Se tivesse apostado, você teria ganho ${formatBRL(r.totals.prize)} 🎉`
+          : 'Se tivesse apostado, esta sugestão não teria sido premiada'}
+      </h3>
+      <p>
+        Melhor jogo: <strong>{best} acertos</strong> · {r.totals.winningBets} de {r.bets.length} jogos premiados · custo{' '}
+        {formatBRL(r.totals.cost)} · saldo <strong className={r.totals.net < 0 ? 'neg' : 'pos'}>{formatBRL(r.totals.net)}</strong>
+      </p>
+      <div className="games">
+        {r.bets.map((b, i) => (
+          <div key={b.numbers.join('-')} className="stack-sm">
+            <GameCard
+              numbers={b.numbers}
+              drawn={r.draw.numbers}
+              title={r.bets.length > 1 ? `Jogo ${i + 1}` : undefined}
+              compact={r.bets.length > 1}
+            />
+            <p className="small">
+              <strong>{b.hits} acertos</strong> · {b.prize > 0 ? formatBRL(b.prize) : 'sem prêmio'}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

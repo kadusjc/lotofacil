@@ -99,8 +99,9 @@ export class AnalysisService {
 
   /** Confere apostas contra um concurso (padrão: o último), explica os erros e recalibra os pesos. */
   async check(dto: CheckDto) {
+    const official = dto.official ? await this.draws.fetchOfficialLatest() : null;
     const draws = await this.requireDraws();
-    const concurso = dto.concurso ?? draws[draws.length - 1].concurso;
+    const concurso = official?.concurso ?? dto.concurso ?? draws[draws.length - 1].concurso;
     if (!draws.some((d) => d.concurso === concurso)) throw new NotFoundException(`Concurso ${concurso} não encontrado`);
     const result = await this.run('check', draws, {
       bets: dto.bets,

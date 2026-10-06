@@ -1,6 +1,6 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsPositive, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsPositive, Max, Min, ValidateNested } from 'class-validator';
 
 export class WeightsDto {
   @IsOptional() @IsNumber() @Min(0) @Max(5) long?: number;
@@ -65,4 +65,8 @@ export class CheckDto {
   @ApiPropertyOptional({ description: 'Concurso a conferir (padrão: o último importado)' })
   @IsOptional() @IsInt() @Min(1)
   concurso?: number;
+
+  @ApiPropertyOptional({ description: 'Busca o último resultado direto no portal da Caixa antes de conferir (ignora `concurso`)' })
+  @IsOptional() @IsBoolean()
+  official?: boolean;
 }

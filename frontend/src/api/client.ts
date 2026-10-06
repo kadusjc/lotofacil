@@ -45,6 +45,8 @@ export const api = {
   backtest: (betSize: number, testSize: number, budget?: number) =>
     post<BacktestResult>('/backtest', { betSize, testSize, budget }),
   check: (bets: number[][], concurso?: number) => post<CheckResult>('/check', { bets, concurso }),
+  /** Confere contra o último resultado buscado na hora no portal da Caixa. */
+  checkOfficial: (bets: number[][]) => post<CheckResult>('/check', { bets, official: true }),
   startSync: () => post<SyncStatus>('/sync', {}),
   syncStatus: () => request<SyncStatus>('/sync/status'),
 }

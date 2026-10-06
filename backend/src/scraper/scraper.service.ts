@@ -17,6 +17,8 @@ export interface FetchResult {
 /** Sessão aberta no portal: um único Chromium reaproveitado por todas as consultas. */
 export interface ScraperSession {
   fetchLatestConcurso(): Promise<number>;
+  /** Resultado completo do concurso mais recente publicado no portal. */
+  fetchLatestDraw(): Promise<Draw>;
   fetchConcursos(concursos: number[], onProgress?: (done: number, total: number) => void): Promise<FetchResult>;
 }
 
@@ -36,6 +38,7 @@ export class ScraperService {
     return this.withBrowser((context) =>
       fn({
         fetchLatestConcurso: () => this.fetchLatestConcurso(context),
+        fetchLatestDraw: async () => parseCaixaResponse(await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/`))),
         fetchConcursos: (concursos, onProgress) => this.fetchConcursos(context, concursos, onProgress),
       }),
     );

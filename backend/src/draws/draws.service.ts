@@ -122,6 +122,18 @@ export class DrawsService implements OnApplicationBootstrap {
     return this.getSyncStatus();
   }
 
+  /** Consulta o último resultado no portal da Caixa e o grava se ainda não estiver no banco. */
+  async fetchOfficialLatest(): Promise<Draw> {
+    const draw = await this.scraper.withSession((session) => session.fetchLatestDraw());
+    const known = (await this.findAll()).some((d) => d.concurso === draw.concurso);
+    if (!known) {
+      await this.repository.upsertMany([draw]);
+      await this.repository.linkSequence();
+      this.cache = null;
+    }
+    return draw;
+  }
+
   async findAll(): Promise<Draw[]> {
     if (!this.cache) this.cache = await this.repository.findAll();
     return this.cache;
