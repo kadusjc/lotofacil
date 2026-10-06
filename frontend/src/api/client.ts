@@ -5,6 +5,7 @@ import type {
   Paginated,
   PlanResponse,
   ProbabilityRow,
+  RecentCheckResult,
   SimilarDraw,
   StatsSummary,
   SuggestionResponse,
@@ -47,6 +48,7 @@ export const api = {
   check: (bets: number[][], concurso?: number) => post<CheckResult>('/check', { bets, concurso }),
   /** Confere contra o último resultado buscado na hora no portal da Caixa. */
   checkOfficial: (bets: number[][]) => post<CheckResult>('/check', { bets, official: true }),
+  checkRecent: (bets: number[][], count = 10) => post<RecentCheckResult>('/check/recent', { bets, count }),
   startSync: () => post<SyncStatus>('/sync', {}),
   syncStatus: () => request<SyncStatus>('/sync/status'),
 }

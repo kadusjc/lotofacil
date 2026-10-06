@@ -70,3 +70,13 @@ export class CheckDto {
   @IsOptional() @IsBoolean()
   official?: boolean;
 }
+
+export class RecentCheckDto {
+  @ApiProperty({ example: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], description: '1 a 200 apostas de 15–20 dezenas' })
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @IsArray({ each: true })
+  bets: number[][];
+
+  @ApiPropertyOptional({ default: 10, maximum: 50 })
+  @IsOptional() @IsInt() @Min(1) @Max(50)
+  count = 10;
+}

@@ -124,14 +124,28 @@ export class DrawsService implements OnApplicationBootstrap {
 
   /** Consulta o último resultado no portal da Caixa e o grava se ainda não estiver no banco. */
   async fetchOfficialLatest(): Promise<Draw> {
-    const draw = await this.scraper.withSession((session) => session.fetchLatestDraw());
-    const known = (await this.findAll()).some((d) => d.concurso === draw.concurso);
-    if (!known) {
-      await this.repository.upsertMany([draw]);
+    return (await this.fetchOfficialRecent(1))[0];
+  }
+
+  /**
+   * Os `count` concursos mais recentes segundo o portal da Caixa (mais recente primeiro).
+   * Baixa e grava os que faltam no banco, para não haver buracos na sequência.
+   */
+  async fetchOfficialRecent(count: number): Promise<Draw[]> {
+    const fresh = await this.scraper.withSession(async (session) => {
+      const latest = await session.fetchLatestDraw();
+      const existing = new Set((await this.findAll()).map((d) => d.concurso));
+      const missing: number[] = [];
+      for (let c = Math.max(1, latest.concurso - count + 1); c < latest.concurso; c++) if (!existing.has(c)) missing.push(c);
+      const { draws } = await session.fetchConcursos(missing);
+      return existing.has(latest.concurso) ? draws : [...draws, latest];
+    });
+    if (fresh.length > 0) {
+      await this.repository.upsertMany(fresh);
       await this.repository.linkSequence();
       this.cache = null;
     }
-    return draw;
+    return [...(await this.findAll())].reverse().slice(0, count);
   }
 
   async findAll(): Promise<Draw[]> {

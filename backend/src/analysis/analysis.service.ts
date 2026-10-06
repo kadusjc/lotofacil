@@ -18,7 +18,8 @@ import {
   repeatsFromPrevious,
   uniformityTest,
 } from '../statistics/statistics';
-import { BacktestDto, CheckDto, PlanDto, SuggestDto, WeightsDto } from './analysis.dto';
+import { BacktestDto, CheckDto, PlanDto, RecentCheckDto, SuggestDto, WeightsDto } from './analysis.dto';
+import { checkBet, validateBets } from '../check/check.engine';
 import { TaskArgs, TaskName, TaskResult, TASKS } from './analysis.tasks';
 
 // Compilado (dist) existe o .js do worker; rodando via ts-node/ts-jest a tarefa roda inline.
@@ -113,6 +114,22 @@ export class AnalysisService {
     await this.draws.saveModelWeights(result.learnedWeights, draws[draws.length - 1].concurso);
     this.learned = result.learnedWeights;
     return result;
+  }
+
+  /** Confere as apostas em cada um dos últimos concursos oficiais (só conferência, sem recalibrar). */
+  async checkRecent(dto: RecentCheckDto) {
+    const error = validateBets(dto.bets);
+    if (error) throw new BadRequestException(error);
+    const draws = await this.draws.fetchOfficialRecent(dto.count);
+    const rows = draws.map((draw) => {
+      const bets = dto.bets.map((b) => checkBet(draw, b, this.betPrice));
+      const prize = bets.reduce((a, b) => a + b.prize, 0);
+      return { draw, bets, bestHits: Math.max(...bets.map((b) => b.hits)), prize };
+    });
+    const costPerDraw = rows[0]?.bets.reduce((a, b) => a + b.cost, 0) ?? 0;
+    const cost = Number((costPerDraw * rows.length).toFixed(2));
+    const prize = rows.reduce((a, r) => a + r.prize, 0);
+    return { rows, totals: { cost, prize, net: Number((prize - cost).toFixed(2)), winningDraws: rows.filter((r) => r.prize > 0).length } };
   }
 
   private async weights(override: WeightsDto | undefined): Promise<Partial<StrategyWeights>> {

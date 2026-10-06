@@ -189,3 +189,8 @@ export interface CheckResult {
   signals: Array<{ signal: Signal; top15Hits: number; meanTop15Hits: number; betAdvantage: number; previousWeight: number; newWeight: number }>
   calibrationWindow: number
 }
+
+export interface RecentCheckResult {
+  rows: Array<{ draw: Draw; bets: BetCheck[]; bestHits: number; prize: number }>
+  totals: { cost: number; prize: number; net: number; winningDraws: number }
+}

@@ -10,10 +10,12 @@ import { PlannerPage } from './pages/PlannerPage'
 const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({ default: m.StatsPage })))
 const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
 const CheckPage = lazy(() => import('./pages/CheckPage').then((m) => ({ default: m.CheckPage })))
+const SavedPage = lazy(() => import('./pages/SavedPage').then((m) => ({ default: m.SavedPage })))
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ default: m.HistoryPage })))
 
 const TABS = {
   planner: { label: 'Sugerir jogo', Page: PlannerPage },
+  saved: { label: 'Apostas salvas', Page: SavedPage },
   check: { label: 'Conferir apostas', Page: CheckPage },
   stats: { label: 'Estatísticas', Page: StatsPage },
   backtest: { label: 'Backtest', Page: BacktestPage },

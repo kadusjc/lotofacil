@@ -10,6 +10,7 @@ import { PlainWinnings } from '../components/PlainWinnings'
 import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
 import { formatBRL, formatDate, formatOneIn } from '../lib/format'
 import { DEFAULT_BET_PRICE } from '../lib/odds'
+import { isSaved, saveBet } from '../lib/savedBets'
 
 const BUDGET_PRESETS = [56, 100, 476, 1000]
 
@@ -102,7 +103,12 @@ export function PlannerPage() {
               const key = planKey(p)
               const active = verify.variables && planKey(verify.variables) === key
               return (
-                <PlanOption key={key} plan={p} recommended={p === plan.data.recommended || isSame(p, plan.data.recommended)}>
+                <PlanOption
+                  key={key}
+                  plan={p}
+                  recommended={p === plan.data.recommended || isSame(p, plan.data.recommended)}
+                  basedOnConcurso={plan.data.basedOnConcurso}
+                >
                   <div className="verify stack-sm">
                     <button type="button" className="primary verify-btn" disabled={verify.isPending} onClick={() => verify.mutate(p)}>
                       {verify.isPending && active ? 'Consultando a Caixa…' : '🎯 Conferir com o último resultado'}
@@ -191,7 +197,24 @@ function isSame(a: BetPlan, b: BetPlan | null) {
   return !!b && a.kind === b.kind && a.betSize === b.betSize && a.tickets === b.tickets
 }
 
-function PlanOption({ plan, recommended, children }: { plan: BetPlan; recommended: boolean; children?: ReactNode }) {
+function PlanOption({
+  plan,
+  recommended,
+  basedOnConcurso,
+  children,
+}: {
+  plan: BetPlan
+  recommended: boolean
+  basedOnConcurso: number
+  children?: ReactNode
+}) {
+  const [saved, setSaved] = useState(() => isSaved(plan))
+  const [saveError, setSaveError] = useState(false)
+  const save = () => {
+    const ok = saveBet(plan, basedOnConcurso)
+    setSaved(ok)
+    setSaveError(!ok)
+  }
   const [expanded, setExpanded] = useState(plan.games.length <= 3)
   const visible = expanded ? plan.games : plan.games.slice(0, 3)
   return (
@@ -225,6 +248,10 @@ function PlanOption({ plan, recommended, children }: { plan: BetPlan; recommende
           {expanded ? 'Mostrar menos' : `Ver todos os ${plan.games.length} jogos`}
         </button>
       )}
+      <button type="button" className="save-btn" disabled={saved} onClick={save}>
+        {saved ? '✔ Aposta salva (veja em “Apostas salvas”)' : '💾 Salvar aposta'}
+      </button>
+      {saveError && <p className="error small">O navegador bloqueou o armazenamento local.</p>}
       {children}
     </article>
   )
