@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { api } from '../api/client'
 import type { BetPlan, CheckResult } from '../api/types'
 import { ChanceGuide } from '../components/ChanceGuide'
@@ -85,19 +85,6 @@ export function PlannerPage() {
                 a chance, só aumentando o valor apostado.
               </p>
               <PlainWinnings plan={plan.data.recommended} />
-              <div className="row wrap">
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={verify.isPending}
-                  onClick={() => plan.data?.recommended && verify.mutate(plan.data.recommended)}
-                >
-                  {verify.isPending ? 'Consultando a Caixa…' : 'Conferir última sugestão'}
-                </button>
-                <span className="muted small">Compara esta sugestão com o resultado mais recente do site oficial da Caixa.</span>
-              </div>
-              <ErrorBox error={verify.error} />
-              {verify.data && <SuggestionCheck result={verify.data} />}
               <details className="more">
                 <summary>Ver detalhes técnicos (probabilidades e valores por faixa)</summary>
                 <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
@@ -111,9 +98,21 @@ export function PlannerPage() {
 
           <h3>Todas as opções para esse valor</h3>
           <div className="plans">
-            {plan.data.plans.map((p) => (
-              <PlanOption key={`${p.kind}-${p.betSize}`} plan={p} recommended={p === plan.data.recommended || isSame(p, plan.data.recommended)} />
-            ))}
+            {plan.data.plans.map((p) => {
+              const key = planKey(p)
+              const active = verify.variables && planKey(verify.variables) === key
+              return (
+                <PlanOption key={key} plan={p} recommended={p === plan.data.recommended || isSame(p, plan.data.recommended)}>
+                  <div className="verify stack-sm">
+                    <button type="button" className="primary verify-btn" disabled={verify.isPending} onClick={() => verify.mutate(p)}>
+                      {verify.isPending && active ? 'Consultando a Caixa…' : '🎯 Conferir com o último resultado'}
+                    </button>
+                    {active && <ErrorBox error={verify.error} />}
+                    {active && verify.data && <SuggestionCheck result={verify.data} />}
+                  </div>
+                </PlanOption>
+              )
+            })}
           </div>
         </>
       )}
@@ -184,11 +183,15 @@ function SuggestionCheck({ result: r }: { result: CheckResult }) {
   )
 }
 
+function planKey(p: BetPlan) {
+  return `${p.kind}-${p.betSize}-${p.tickets}`
+}
+
 function isSame(a: BetPlan, b: BetPlan | null) {
   return !!b && a.kind === b.kind && a.betSize === b.betSize && a.tickets === b.tickets
 }
 
-function PlanOption({ plan, recommended }: { plan: BetPlan; recommended: boolean }) {
+function PlanOption({ plan, recommended, children }: { plan: BetPlan; recommended: boolean; children?: ReactNode }) {
   const [expanded, setExpanded] = useState(plan.games.length <= 3)
   const visible = expanded ? plan.games : plan.games.slice(0, 3)
   return (
@@ -222,6 +225,7 @@ function PlanOption({ plan, recommended }: { plan: BetPlan; recommended: boolean
           {expanded ? 'Mostrar menos' : `Ver todos os ${plan.games.length} jogos`}
         </button>
       )}
+      {children}
     </article>
   )
 }
