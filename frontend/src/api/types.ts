@@ -186,6 +186,6 @@ export interface CheckResult {
   totals: { cost: number; prize: number; net: number; winningBets: number }
   missedDrawn: number[]
   wrongPicks: number[]
-  signals: Array<{ signal: Signal; top15Hits: number; meanTop15Hits: number; previousWeight: number; newWeight: number }>
+  signals: Array<{ signal: Signal; top15Hits: number; meanTop15Hits: number; betAdvantage: number; previousWeight: number; newWeight: number }>
   calibrationWindow: number
 }

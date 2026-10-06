@@ -1,6 +1,6 @@
 import { syntheticDraws } from '../test-utils/fixtures';
 import { DEFAULT_WEIGHTS } from '../strategy/strategy.engine';
-import { calibrateWeights, checkBet, runCheck, SIGNALS, validateBets } from './check.engine';
+import { calibrateWeights, checkBet, learnFromBets, runCheck, SIGNALS, validateBets } from './check.engine';
 
 describe('check.engine', () => {
   const draws = syntheticDraws(160);
@@ -58,5 +58,14 @@ describe('check.engine', () => {
     expect(() =>
       runCheck(draws, { bets: [draws[5].numbers], concurso: draws[5].concurso, betPrice: 3.5, previousWeights: DEFAULT_WEIGHTS }),
     ).toThrow(/insuficiente/);
+  });
+
+  it('learnFromBets favors signals that pointed to the hits', () => {
+    const adv = { long: 1, recent: -1, momentum: 0, delay: 0, analog: 0 };
+    const w = learnFromBets(DEFAULT_WEIGHTS, DEFAULT_WEIGHTS, adv);
+    expect(w.long).toBeGreaterThan(DEFAULT_WEIGHTS.long);
+    expect(w.recent).toBeLessThan(DEFAULT_WEIGHTS.recent);
+    const sum = (x: typeof w) => SIGNALS.reduce((a, s) => a + x[s], 0);
+    expect(sum(w)).toBeCloseTo(sum(DEFAULT_WEIGHTS), 3);
   });
 });

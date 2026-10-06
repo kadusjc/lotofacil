@@ -107,6 +107,7 @@ export function CheckPage() {
                   <th>Sinal</th>
                   <th>Acertos das 15 favoritas neste concurso</th>
                   <th>Média nos últimos {r.calibrationWindow}</th>
+                  <th>Apontou para os acertos?</th>
                   <th>Peso antes → depois</th>
                 </tr>
               </thead>
@@ -116,6 +117,7 @@ export function CheckPage() {
                     <td>{SIGNAL_LABELS[s.signal]}</td>
                     <td className={s.top15Hits >= 9 ? 'pos' : 'neg'}>{s.top15Hits} / 15</td>
                     <td>{s.meanTop15Hits.toFixed(2)}</td>
+                    <td className={s.betAdvantage > 0 ? 'pos' : s.betAdvantage < 0 ? 'neg' : ''}>{s.betAdvantage.toFixed(2)}</td>
                     <td>
                       {s.previousWeight.toFixed(3)} → <strong>{s.newWeight.toFixed(3)}</strong>
                     </td>
@@ -125,7 +127,7 @@ export function CheckPage() {
             </table>
             <p className="muted small">
               Um sinal sem poder de previsão acerta em média 9 das suas 15 favoritas. Os pesos foram recalibrados com esses
-              resultados e já valem para as próximas sugestões. Isso ajusta a IA ao que funcionou recentemente, mas não muda a
+              resultados e com os acertos/erros das suas apostas e já valem para as próximas sugestões. Isso ajusta a IA ao que funcionou recentemente, mas não muda a
               chance real do sorteio. Use o Backtest para ver se a estratégia supera o acaso.
             </p>
           </div>

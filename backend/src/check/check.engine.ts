@@ -32,6 +32,8 @@ export interface SignalReport {
   top15Hits: number;
   /** Média walk-forward na janela de calibração. */
   meanTop15Hits: number;
+  /** Nota média (z) do sinal nas dezenas apostadas que saíram menos nas que não saíram. */
+  betAdvantage: number;
   previousWeight: number;
   newWeight: number;
 }
@@ -109,6 +111,46 @@ export function calibrateWeights(
   return { weights, mean, window: Math.max(n, 0) };
 }
 
+/**
+ * Aprendizado pelas apostas conferidas: compara a nota (z-score) que cada sinal deu às dezenas
+ * marcadas que saíram contra as marcadas que não saíram. Vantagem positiva = o sinal apontava
+ * para os acertos. Sem acertos ou sem erros, não há contraste e a vantagem é 0.
+ */
+export function betAdvantage(history: Draw[], picked: number[], drawn: number[]): Record<Signal, number> {
+  const { scores } = computeNumberScores(history);
+  const isDrawn = new Set(drawn);
+  const hit = picked.filter((n) => isDrawn.has(n));
+  const miss = picked.filter((n) => !isDrawn.has(n));
+  const mean = (ns: number[], s: Signal) => ns.reduce((a, n) => a + scores[n - 1].components[s], 0) / ns.length;
+  return Object.fromEntries(
+    SIGNALS.map((s) => [s, hit.length && miss.length ? mean(hit, s) - mean(miss, s) : 0]),
+  ) as Record<Signal, number>;
+}
+
+/**
+ * Pesos finais: calibração walk-forward × exp(η · vantagem nas apostas), misturados com os pesos
+ * anteriores (média móvel) para que cada conferência acumule sem que uma só domine.
+ */
+export function learnFromBets(
+  calibrated: StrategyWeights,
+  previous: StrategyWeights,
+  advantage: Record<Signal, number>,
+  eta = 0.5,
+  memory = 0.3,
+): StrategyWeights {
+  const total = SIGNALS.reduce((a, s) => a + calibrated[s], 0);
+  const raw = SIGNALS.map((s) => calibrated[s] * Math.exp(eta * advantage[s]));
+  const rawTotal = raw.reduce((a, b) => a + b, 0);
+  const prevTotal = SIGNALS.reduce((a, s) => a + previous[s], 0) || total;
+  const out = { ...calibrated };
+  SIGNALS.forEach((s, i) => {
+    const fresh = (raw[i] / rawTotal) * total;
+    const prev = (previous[s] / prevTotal) * total;
+    out[s] = Number(((1 - memory) * fresh + memory * prev).toFixed(4));
+  });
+  return out;
+}
+
 export interface CheckArgs {
   bets: number[][];
   concurso: number;
@@ -135,6 +177,8 @@ export function runCheck(draws: Draw[], { bets, concurso, betPrice, previousWeig
   const today = signalHits(draws.slice(0, idx), draw);
   // Calibra sempre com o histórico completo: conferir um concurso antigo não deve "regredir" o modelo.
   const calibration = calibrateWeights(draws, window);
+  const advantage = betAdvantage(draws.slice(0, idx), [...picked], draw.numbers);
+  const learned = learnFromBets(calibration.weights, previousWeights, advantage);
 
   return {
     draw,
@@ -146,10 +190,11 @@ export function runCheck(draws: Draw[], { bets, concurso, betPrice, previousWeig
       signal: s,
       top15Hits: today[s],
       meanTop15Hits: calibration.mean[s],
+      betAdvantage: Number(advantage[s].toFixed(3)),
       previousWeight: previousWeights[s],
-      newWeight: calibration.weights[s],
+      newWeight: learned[s],
     })),
     calibrationWindow: calibration.window,
-    learnedWeights: calibration.weights,
+    learnedWeights: learned,
   };
 }
