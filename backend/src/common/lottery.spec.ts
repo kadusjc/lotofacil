@@ -1,4 +1,4 @@
-import { binomial, countHits, createRng, isValidGame } from './lottery';
+import { binomial, countHits, createRng, isValidGame, LOTOFACIL } from './lottery';
 import { mapWithConcurrency, withRetry } from './concurrency';
 
 describe('lottery utils', () => {
@@ -8,10 +8,10 @@ describe('lottery utils', () => {
     expect(binomial(5, 7)).toBe(0);
   });
   it('isValidGame', () => {
-    expect(isValidGame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(true);
-    expect(isValidGame([1, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(false);
-    expect(isValidGame([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(false);
-    expect(isValidGame([1, 2, 3])).toBe(false);
+    expect(isValidGame(LOTOFACIL, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(true);
+    expect(isValidGame(LOTOFACIL, [1, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(false);
+    expect(isValidGame(LOTOFACIL, [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])).toBe(false);
+    expect(isValidGame(LOTOFACIL, [1, 2, 3])).toBe(false);
   });
   it('countHits', () => expect(countHits([1, 2, 3, 4], [2, 4, 9])).toBe(2));
   it('rng is deterministic and in [0,1)', () => {

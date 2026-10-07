@@ -1,13 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Browser, BrowserContext, chromium } from 'playwright';
-import { Draw } from '../common/lottery';
+import { Draw, LotteryGame } from '../common/lottery';
 import { mapWithConcurrency, withRetry } from '../common/concurrency';
 import { AppConfig } from '../config/configuration';
-import { CaixaLotofacilResponse, parseCaixaResponse } from './caixa.parser';
+import { CaixaResponse, parseCaixaResponse } from './caixa.parser';
 
-export const CAIXA_PORTAL_URL = 'https://loterias.caixa.gov.br/Paginas/Lotofacil.aspx';
-export const CAIXA_API_URL = 'https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil';
+export const CAIXA_API_BASE = 'https://servicebus2.caixa.gov.br/portaldeloterias/api';
+
+export function caixaApiUrl(game: LotteryGame): string {
+  return `${CAIXA_API_BASE}/${game.caixaSlug}`;
+}
 
 export interface FetchResult {
   draws: Draw[];
@@ -34,18 +37,19 @@ export class ScraperService {
   constructor(private readonly config: ConfigService<AppConfig, true>) {}
 
   /** Abre o navegador uma vez, executa `fn` e fecha ao final (mesmo em caso de erro). */
-  async withSession<T>(fn: (session: ScraperSession) => Promise<T>): Promise<T> {
-    return this.withBrowser((context) =>
+  async withSession<T>(game: LotteryGame, fn: (session: ScraperSession) => Promise<T>): Promise<T> {
+    const api = caixaApiUrl(game);
+    return this.withBrowser(game, (context) =>
       fn({
-        fetchLatestConcurso: () => this.fetchLatestConcurso(context),
-        fetchLatestDraw: async () => parseCaixaResponse(await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/`))),
-        fetchConcursos: (concursos, onProgress) => this.fetchConcursos(context, concursos, onProgress),
+        fetchLatestConcurso: () => this.fetchLatestConcurso(context, api),
+        fetchLatestDraw: async () => parseCaixaResponse(game, await withRetry(() => this.fetchJson(context, `${api}/`))),
+        fetchConcursos: (concursos, onProgress) => this.fetchConcursos(game, context, api, concursos, onProgress),
       }),
     );
   }
 
-  private async fetchLatestConcurso(context: BrowserContext): Promise<number> {
-    const latest = await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/`));
+  private async fetchLatestConcurso(context: BrowserContext, api: string): Promise<number> {
+    const latest = await withRetry(() => this.fetchJson(context, `${api}/`));
     // Sem essa checagem, uma resposta inesperada viraria "0 concursos faltando" silenciosamente.
     if (!Number.isInteger(latest?.numero) || latest.numero < 1) {
       throw new Error(`Resposta inválida ao consultar o último concurso: ${JSON.stringify(latest).slice(0, 200)}`);
@@ -54,7 +58,9 @@ export class ScraperService {
   }
 
   private async fetchConcursos(
+    game: LotteryGame,
     context: BrowserContext,
+    api: string,
     concursos: number[],
     onProgress?: (done: number, total: number) => void,
   ): Promise<FetchResult> {
@@ -64,10 +70,10 @@ export class ScraperService {
     let done = 0;
     const results = await mapWithConcurrency(concursos, concurrency, async (concurso) => {
       try {
-        const payload = await withRetry(() => this.fetchJson(context, `${CAIXA_API_URL}/${concurso}`));
-        return parseCaixaResponse(payload);
+        const payload = await withRetry(() => this.fetchJson(context, `${api}/${concurso}`));
+        return parseCaixaResponse(game, payload);
       } catch (error) {
-        this.logger.warn(`Falha no concurso ${concurso}: ${(error as Error).message}`);
+        this.logger.warn(`${game.name}: falha no concurso ${concurso}: ${(error as Error).message}`);
         failed.push(concurso);
         return null;
       } finally {
@@ -78,23 +84,23 @@ export class ScraperService {
     return { draws: results.filter((d): d is Draw => d !== null), failed: failed.sort((a, b) => a - b) };
   }
 
-  private async fetchJson(context: BrowserContext, url: string): Promise<CaixaLotofacilResponse> {
+  private async fetchJson(context: BrowserContext, url: string): Promise<CaixaResponse> {
     const response = await context.request.get(url, {
       headers: { accept: 'application/json' },
       timeout: 20_000,
     });
     if (!response.ok()) throw new Error(`HTTP ${response.status()} em ${url}`);
-    return (await response.json()) as CaixaLotofacilResponse;
+    return (await response.json()) as CaixaResponse;
   }
 
-  private async withBrowser<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
+  private async withBrowser<T>(game: LotteryGame, fn: (context: BrowserContext) => Promise<T>): Promise<T> {
     let browser: Browser | undefined;
     try {
       browser = await chromium.launch({ headless: true });
       const context = await browser.newContext({ locale: 'pt-BR' });
       const page = await context.newPage();
       try {
-        await page.goto(CAIXA_PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.goto(game.portalUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       } catch (error) {
         // O portal pode estar lento; a API costuma responder mesmo assim.
         this.logger.warn(`Portal indisponível, seguindo direto para a API: ${(error as Error).message}`);

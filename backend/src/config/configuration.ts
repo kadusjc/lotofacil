@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GameId } from '../common/lottery';
 
 /** Senha de desenvolvimento (a mesma do docker-compose). Proibida em produção. */
 export const DEV_NEO4J_PASSWORD = 'lotofacil123';
@@ -14,6 +15,9 @@ const schema = z
     SCRAPE_FROM_CONCURSO: z.coerce.number().int().positive().default(1),
     SCRAPE_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(4),
     BET_PRICE: z.coerce.number().positive().default(3.5),
+    MEGASENA_BET_PRICE: z.coerce.number().positive().default(6),
+    QUINA_BET_PRICE: z.coerce.number().positive().default(3),
+    DIADESORTE_BET_PRICE: z.coerce.number().positive().default(2.5),
     SYNC_ON_STARTUP: z
       .enum(['true', 'false'])
       .default('false')
@@ -30,7 +34,8 @@ export interface AppConfig {
   neo4j: { uri: string; user: string; password: string };
   scrapeFromConcurso: number;
   scrapeConcurrency: number;
-  betPrice: number;
+  /** Preço da aposta simples de cada jogo (R$). */
+  betPrices: Record<GameId, number>;
   syncOnStartup: boolean;
 }
 
@@ -46,7 +51,7 @@ export function loadConfig(env: Record<string, unknown> = process.env): AppConfi
     neo4j: { uri: e.NEO4J_URI, user: e.NEO4J_USER, password: e.NEO4J_PASSWORD },
     scrapeFromConcurso: e.SCRAPE_FROM_CONCURSO,
     scrapeConcurrency: e.SCRAPE_CONCURRENCY,
-    betPrice: e.BET_PRICE,
+    betPrices: { lotofacil: e.BET_PRICE, megasena: e.MEGASENA_BET_PRICE, quina: e.QUINA_BET_PRICE, diadesorte: e.DIADESORTE_BET_PRICE },
     syncOnStartup: e.SYNC_ON_STARTUP,
   };
 }

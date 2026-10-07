@@ -40,7 +40,7 @@ export interface BetPlan {
   betSize: number
   tickets: number
   cost: number
-  probAtLeast14: { lower: number; upper: number; estimate: number }
+  probAtLeastNear: { lower: number; upper: number; estimate: number }
   oneIn: number
   description: string
   games: SuggestedGame[]
@@ -58,12 +58,9 @@ export interface PlanReturns {
   tiers: Array<{ hits: number; probability: number; payout: number }>
 }
 
-/** Chances de 0 a 1 de pelo menos um cartão atingir cada faixa. */
+/** Chance (0 a 1) de pelo menos um cartão fazer >= `hits` acertos, por faixa premiada (ordem crescente). */
 export interface PlanOdds {
-  atLeast11: number
-  atLeast13: number
-  atLeast14: number
-  jackpot: number
+  tiers: Array<{ hits: number; probability: number }>
 }
 
 export interface PlanResponse {
@@ -109,6 +106,7 @@ export interface ProfileStat {
 
 export interface StatsSummary {
   totalDraws: number
+  recentWindow: number
   first: { concurso: number; date: string }
   last: Draw
   numbers: NumberStat[]
@@ -120,8 +118,8 @@ export interface ProbabilityRow {
   betSize: number
   combinations: number
   cost: number
-  atLeast14: number
-  atLeast14OneIn: number
+  atLeastNear: number
+  atLeastNearOneIn: number
   jackpotOneIn: number
 }
 
@@ -135,8 +133,8 @@ export interface BacktestResult {
   expectedRandomMeanHits: number
   meanHitsCi95: [number, number]
   hitDistribution: Array<{ hits: number; observed: number; expectedRandom: number }>
-  atLeast11: number
-  atLeast14: number
+  atLeastMin: number
+  atLeastNear: number
   totalCost: number
   totalPrize: number
   roi: number
@@ -186,7 +184,9 @@ export interface CheckResult {
   totals: { cost: number; prize: number; net: number; winningBets: number }
   missedDrawn: number[]
   wrongPicks: number[]
-  signals: Array<{ signal: Signal; top15Hits: number; meanTop15Hits: number; betAdvantage: number; previousWeight: number; newWeight: number }>
+  signals: Array<{ signal: Signal; topHits: number; meanTopHits: number }>
+  topSize: number
+  randomTopHits: number
   calibrationWindow: number
 }
 

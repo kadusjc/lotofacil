@@ -20,6 +20,12 @@
   line-height: 1.5;
 }
 
+/* Cores de cada jogo (a Lotofácil usa as de :root). */
+.theme[data-game='megasena'] { --accent: #209869; --accent-strong: #157a52; --accent-2: #4cbf8d; --accent-soft: #eaf7f1; --cell-border: #a6dcc4; }
+.theme[data-game='quina'] { --accent: #260085; --accent-strong: #1a005e; --accent-2: #5a3cc4; --accent-soft: #efecfa; --cell-border: #b8acdf; }
+.theme[data-game='diadesorte'] { --accent: #b8741a; --accent-strong: #8f5810; --accent-2: #d99a45; --accent-soft: #fbf3e6; --cell-border: #e6c48f; }
+.theme { min-height: 100vh; }
+
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--text); background: var(--bg); }
 h1, h2, h3, h4 { margin: 0 0 0.4rem; line-height: 1.2; }
@@ -42,6 +48,9 @@ p { margin: 0.25rem 0; }
 .sync { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .latest { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 
+.game-tabs { max-width: 1200px; margin: 0 auto; padding: 0 16px 10px; display: flex; gap: 6px; overflow-x: auto; }
+.game-tabs button { background: transparent; color: #fff; border: 1.5px solid rgba(255, 255, 255, 0.6); border-radius: 999px; padding: 5px 16px; font-weight: 700; white-space: nowrap; }
+.game-tabs button.active { background: #fff; color: var(--accent); border-color: #fff; }
 .tabs { display: flex; gap: 6px; overflow-x: auto; padding: 14px 0 2px; }
 .tabs button { background: var(--surface); border-color: var(--border) !important; border: 1.5px solid transparent; border-radius: 999px; padding: 7px 16px; color: var(--muted); font-weight: 700; white-space: nowrap; }
 .tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent) !important; }
@@ -70,19 +79,35 @@ input, select, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; 
 .error { color: var(--danger); }
 .badge { font-size: 0.7rem; background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
 
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
 .kpi { display: flex; flex-direction: column; gap: 2px; }
 .kpi strong { font-size: 1.3rem; }
 
-.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
-.games { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
-.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; align-items: start; }
+/* Máximo de cartelas por linha sem ficar ilegível: cada cartela precisa de células de >= 32px, então
+   volantes com mais colunas (Mega/Quina: 10) cabem menos por linha que a Lotofácil (5).
+   --cols vem do jogo ativo (.theme) e é herdado por todas as listas de cartelas. */
+.games {
+  --card-min: calc(var(--cols, 5) * 32px + (var(--cols, 5) - 1) * 6px + 34px);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min)), 1fr));
+  gap: 16px;
+  margin-top: 8px;
+  align-items: start;
+}
+.games > * { min-width: 0; }
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
 
 .game-card {
+  /* Volante fluido: encolhe com o espaço disponível, até o tamanho natural de cada célula (--cell). */
+  --cell: 40px;
+  --gap: 8px;
+  --pad: 16px;
   margin: 0;
-  display: inline-flex;
+  width: min(100%, calc(var(--cols, 5) * var(--cell) + (var(--cols, 5) - 1) * var(--gap) + 2 * var(--pad)));
+  display: flex;
   flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--border);
@@ -101,14 +126,15 @@ input, select, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; 
 }
 .ticket-brand { font-weight: 900; font-size: 0.95rem; letter-spacing: 0.01em; text-transform: none; }
 .ticket-meta { font-size: 0.75rem; opacity: 0.9; }
-.game-card .grid { display: grid; grid-template-columns: repeat(5, 40px); gap: 8px; padding: 14px 16px 10px; }
-.game-card.compact .grid { grid-template-columns: repeat(5, 28px); gap: 5px; padding: 10px 12px 8px; }
+.game-card.compact { --cell: 28px; --gap: 4px; --pad: 10px; }
+.game-card .grid { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); gap: var(--gap); padding: 12px var(--pad) 10px; container-type: inline-size; }
 .game-card.compact .ticket-head { padding: 5px 12px; }
 .game-card.compact .ticket-brand { font-size: 0.78rem; }
 .ticket-foot { display: flex; justify-content: space-between; padding: 6px 14px 10px; font-size: 0.72rem; color: var(--muted); border-top: 1px solid var(--grid); }
 .cell {
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -117,10 +143,11 @@ input, select, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; 
   color: var(--accent);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
+  /* A fonte acompanha a largura da célula (container query no .grid). */
+  font-size: clamp(0.55rem, calc(100cqi / var(--cols, 5) * 0.36), 0.9rem);
   transition: transform 0.12s ease;
 }
-.compact .cell { width: 28px; height: 28px; font-size: 0.7rem; border-width: 1px; }
+.compact .cell { border-width: 1px; }
 .cell.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cell.hit { background: var(--hit); border-color: var(--hit); }
 
@@ -154,7 +181,7 @@ footer { padding: 8px 0 24px; }
 .guide { border-top: 4px solid var(--accent); }
 .panel h2, .panel h3 { color: var(--accent); }
 .guide-lead { font-size: 1rem; margin-bottom: 12px; }
-.guide-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.guide-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 10px; margin-bottom: 16px; }
 .guide-card { border-radius: 12px; padding: 12px; border: 1px solid var(--cell-border); background: var(--cell); }
 .guide-card p { font-size: 0.85rem; color: var(--muted); }
 .guide-card.no { background: #fff4f2; border-color: #f3cfc9; }
@@ -183,3 +210,47 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, monospace; 
 .verify { margin-top: 14px; padding: 14px; border-radius: 14px; background: var(--accent-soft); border: 2px solid var(--accent); align-items: center; text-align: center; }
 .verify-btn { width: 100%; font-size: 1.1rem; padding: 14px 22px; }
 .save-btn { margin-top: 10px; width: 100%; font-weight: 600; }
+
+/* Banner de apoio da Bia (cores da marca: azul-noite + verde). */
+.bia-banner { margin-top: 14px; display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-radius: 16px; background: linear-gradient(120deg, #0a1628 0%, #0f2a3a 100%); color: #cbd5e1; text-decoration: none; border: 1px solid rgba(0, 196, 106, 0.35); box-shadow: 0 4px 14px rgba(10, 22, 40, 0.18); }
+.bia-banner:hover { border-color: #00c46a; }
+.bia-banner img { flex-shrink: 0; filter: drop-shadow(0 0 10px rgba(0, 196, 106, 0.45)); }
+.bia-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.bia-eyebrow { font-size: 0.72rem; color: #00c46a; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.bia-text strong { color: #fff; font-size: 1.05rem; }
+.bia-hl { color: #d9e86b; }
+.bia-sub { font-size: 0.82rem; }
+.bia-cta { flex-shrink: 0; background: #00c46a; color: #0a1628; font-weight: 800; padding: 9px 18px; border-radius: 999px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .bia-banner { flex-wrap: wrap; }
+  .bia-sub { display: none; }
+  .bia-cta { width: 100%; text-align: center; }
+}
+.credit { margin-top: 8px; }
+.credit a { color: var(--accent); font-weight: 700; }
+.disclaimer { margin: 14px 0 0; padding: 10px 14px; border-radius: 12px; background: #fffaeb; border: 1px solid #f2e2b0; color: #6b5310; font-size: 0.85rem; }
+.legal { margin-top: 10px; }
+.legal summary { color: var(--text); }
+.legal ul { margin: 8px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.terms-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(20, 12, 24, 0.72); display: grid; place-items: center; padding: 16px; }
+.terms-modal { background: var(--surface); border-radius: 16px; padding: 20px; max-width: 640px; width: 100%; max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); }
+.terms-modal h2 { color: var(--accent); }
+.terms-body { overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px; font-size: 0.85rem; min-height: 120px; }
+.terms-body ul { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.terms-check { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; cursor: pointer; }
+.terms-check input { margin-top: 3px; }
+.plan, .panel, main, .stack > * { min-width: 0; }
+.number-list { max-width: 100%; }
+.app { overflow-x: clip; }
+@media (max-width: 640px) {
+  .app { padding: 0 12px 12px; }
+  .panel { padding: 12px; }
+  .topbar-inner { padding: 12px; }
+  .sync, .latest { align-items: flex-start; justify-content: flex-start; }
+  form.panel.row > *, form.panel.row button.primary { width: 100%; }
+  .field input, .field select { width: 100%; }
+}
+.modal-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(20, 12, 24, 0.6); display: grid; place-items: center; padding: 16px; }
+.modal { background: var(--surface); border-radius: 16px; padding: 20px; max-width: 420px; width: 100%; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; gap: 10px; }
+.modal-actions { justify-content: flex-end; flex-wrap: wrap; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }

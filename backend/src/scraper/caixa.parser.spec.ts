@@ -1,3 +1,4 @@
+import { LOTOFACIL as G } from '../common/lottery';
 import { CaixaParseError, parseBrDate, parseCaixaResponse } from './caixa.parser';
 
 const payload = {
@@ -13,7 +14,7 @@ const payload = {
 
 describe('caixa parser', () => {
   it('parses a real response', () => {
-    const d = parseCaixaResponse(payload);
+    const d = parseCaixaResponse(G, payload);
     expect(d.concurso).toBe(3795);
     expect(d.date).toBe('2026-10-02');
     expect(d.numbers[0]).toBe(1);
@@ -24,10 +25,10 @@ describe('caixa parser', () => {
     ]);
   });
   it('falls back to sorted numbers when order missing', () => {
-    expect(parseCaixaResponse({ ...payload, dezenasSorteadasOrdemSorteio: null }).drawOrder[0]).toBe(1);
+    expect(parseCaixaResponse(G, { ...payload, dezenasSorteadasOrdemSorteio: null }).drawOrder[0]).toBe(1);
   });
   it('rejects invalid data', () => {
-    expect(() => parseCaixaResponse({ ...payload, listaDezenas: ['01'] })).toThrow(CaixaParseError);
+    expect(() => parseCaixaResponse(G, { ...payload, listaDezenas: ['01'] })).toThrow(CaixaParseError);
     expect(() => parseBrDate('2026-10-02')).toThrow(CaixaParseError);
   });
 });

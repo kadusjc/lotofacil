@@ -4,14 +4,16 @@ import { api } from '../api/client'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
 import { formatDate, formatPct } from '../lib/format'
+import { useGame } from '../lib/games'
 
 export function HistoryPage() {
+  const game = useGame()
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
-  const draws = useQuery({ queryKey: ['draws', page], queryFn: () => api.draws(page), placeholderData: keepPreviousData })
+  const draws = useQuery({ queryKey: [game.id, 'draws', page], queryFn: () => api.draws(game.id, page), placeholderData: keepPreviousData })
   const similar = useQuery({
-    queryKey: ['similar', selected],
-    queryFn: () => api.similar(selected!, 8),
+    queryKey: [game.id, 'similar', selected],
+    queryFn: () => api.similar(game.id, selected!, 8),
     enabled: selected !== null,
   })
   const totalPages = draws.data ? Math.ceil(draws.data.total / draws.data.pageSize) : 1

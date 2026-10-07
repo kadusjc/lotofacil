@@ -1,21 +1,25 @@
-import { binomial, countHits, Draw, DRAWN_PER_CONTEST, isValidGame, MAX_BET_SIZE, MIN_BET_SIZE, sortAsc } from '../common/lottery';
+import { binomial, countHits, Draw, isValidGame, LotteryGame, sortAsc } from '../common/lottery';
 import { prizeFor } from '../backtest/backtest.engine';
-import { computeNumberScores, DEFAULT_WEIGHTS, NumberScore, StrategyWeights } from '../strategy/strategy.engine';
+import { computeNumberScores, NumberScore } from '../strategy/strategy.engine';
 
 /**
- * Conferência de apostas contra um concurso + diagnóstico de "onde errou" + calibração dos pesos.
+ * Conferência de apostas contra um concurso + diagnóstico de "onde errou".
  *
- * O diagnóstico mede cada sinal do ensemble pelas suas 15 dezenas favoritas: quantas saíram de fato.
- * Um sinal sem poder preditivo acerta em média 9 (= 15·15/25). A calibração repete isso
- * walk-forward nos últimos concursos e ajusta os pesos por Hedge (pesos multiplicativos):
- * sinais que acertaram acima do acaso ganham peso, os abaixo perdem. Isso não muda a
- * probabilidade real do sorteio; o backtest continua sendo o juiz.
+ * O diagnóstico mede cada sinal do ensemble pelas suas d dezenas favoritas (d = dezenas sorteadas):
+ * quantas saíram de fato. Um sinal sem poder preditivo acerta em média d²/N (9 na Lotofácil, com
+ * desvio-padrão ~1,2 por concurso; 0,6 na Mega-Sena).
+ * A conferência NÃO altera os pesos: com sorteios independentes, ajustar pesos pelos últimos
+ * resultados só persegue ruído (sobreajuste) e não muda a chance de nenhum jogo.
  */
 export type Signal = keyof NumberScore['components'];
 export const SIGNALS: Signal[] = ['long', 'recent', 'momentum', 'delay', 'analog'];
 /** Mínimo de concursos anteriores para os sinais (estatísticas e análogos) fazerem sentido. */
 const MIN_HISTORY = 30;
-export const RANDOM_TOP15_HITS = (DRAWN_PER_CONTEST * DRAWN_PER_CONTEST) / 25; // 9
+
+/** Acertos esperados das d favoritas de um sinal sem poder preditivo: d²/N. */
+export function randomTopHits(game: LotteryGame): number {
+  return (game.drawn * game.drawn) / game.totalNumbers;
+}
 
 export interface BetCheck {
   numbers: number[];
@@ -28,14 +32,10 @@ export interface BetCheck {
 
 export interface SignalReport {
   signal: Signal;
-  /** Acertos das 15 dezenas mais bem pontuadas por este sinal no concurso conferido. */
-  top15Hits: number;
-  /** Média walk-forward na janela de calibração. */
-  meanTop15Hits: number;
-  /** Nota média (z) do sinal nas dezenas apostadas que saíram menos nas que não saíram. */
-  betAdvantage: number;
-  previousWeight: number;
-  newWeight: number;
+  /** Acertos das d dezenas mais bem pontuadas por este sinal no concurso conferido. */
+  topHits: number;
+  /** Média walk-forward nos últimos `window` concursos até o conferido. */
+  meanTopHits: number;
 }
 
 export interface CheckResult {
@@ -47,138 +47,84 @@ export interface CheckResult {
   /** Dezenas marcadas (em alguma aposta) que não saíram. */
   wrongPicks: number[];
   signals: SignalReport[];
+  /** Quantas favoritas cada sinal escolhe (d) e quantas acertaria por puro acaso (d²/N). */
+  topSize: number;
+  randomTopHits: number;
   calibrationWindow: number;
-  learnedWeights: StrategyWeights;
 }
 
-export function validateBets(bets: number[][]): string | null {
+export function validateBets(game: LotteryGame, bets: number[][]): string | null {
   for (let i = 0; i < bets.length; i++) {
     const b = bets[i];
-    if (b.length < MIN_BET_SIZE || b.length > MAX_BET_SIZE || !isValidGame(b, b.length)) {
-      return `Aposta ${i + 1}: informe de ${MIN_BET_SIZE} a ${MAX_BET_SIZE} dezenas distintas entre 1 e 25.`;
+    if (!Array.isArray(b) || b.length < game.minBet || b.length > game.maxBet || !isValidGame(game, b, b.length)) {
+      return `Aposta ${i + 1}: informe de ${game.minBet} a ${game.maxBet} dezenas distintas entre 1 e ${game.totalNumbers}.`;
     }
   }
   return null;
 }
 
-export function checkBet(draw: Draw, numbers: number[], betPrice: number): BetCheck {
+export function checkBet(game: LotteryGame, draw: Draw, numbers: number[], betPrice: number): BetCheck {
   const sorted = sortAsc(numbers);
   const drawn = new Set(draw.numbers);
   const hits = countHits(sorted, draw.numbers);
   return {
     numbers: sorted,
     betSize: sorted.length,
-    cost: Number((binomial(sorted.length, DRAWN_PER_CONTEST) * betPrice).toFixed(2)),
+    cost: Number((binomial(sorted.length, game.drawn) * betPrice).toFixed(2)),
     hits,
     hitNumbers: sorted.filter((n) => drawn.has(n)),
-    prize: prizeFor(draw, sorted.length, hits),
+    prize: prizeFor(game, draw, sorted.length, hits),
   };
 }
 
-/** Acertos das top-15 dezenas de cada sinal, usando só o histórico anterior ao concurso. */
-export function signalHits(history: Draw[], target: Draw): Record<Signal, number> {
-  const { scores } = computeNumberScores(history);
+/** Acertos das top-d dezenas de cada sinal, usando só o histórico anterior ao concurso. */
+export function signalHits(game: LotteryGame, history: Draw[], target: Draw): Record<Signal, number> {
+  const { scores } = computeNumberScores(game, history);
   const drawn = new Set(target.numbers);
   const out = {} as Record<Signal, number>;
   for (const s of SIGNALS) {
-    const top = [...scores].sort((a, b) => b.components[s] - a.components[s]).slice(0, DRAWN_PER_CONTEST);
+    const top = [...scores].sort((a, b) => b.components[s] - a.components[s]).slice(0, game.drawn);
     out[s] = top.filter((x) => drawn.has(x.number)).length;
   }
   return out;
 }
 
-/**
- * Calibração walk-forward (Hedge): peso_s = padrão_s · exp(η · (média_s − 9)), renormalizado para
- * manter a soma dos pesos padrão. `history` em ordem crescente; avalia os últimos `window` concursos.
- */
-export function calibrateWeights(
-  history: Draw[],
-  window = 30,
-  eta = 0.5,
-): { weights: StrategyWeights; mean: Record<Signal, number>; window: number } {
+/** Média walk-forward de acertos das top-d de cada sinal nos últimos `window` concursos de `history` (crescente). */
+export function signalTrackRecord(game: LotteryGame, history: Draw[], window = 30): { mean: Record<Signal, number>; window: number } {
   const n = Math.min(window, history.length - 100);
   const sums = Object.fromEntries(SIGNALS.map((s) => [s, 0])) as Record<Signal, number>;
   for (let t = history.length - n; t < history.length; t++) {
-    const h = signalHits(history.slice(0, t), history[t]);
+    const h = signalHits(game, history.slice(0, t), history[t]);
     for (const s of SIGNALS) sums[s] += h[s];
   }
-  const mean = Object.fromEntries(SIGNALS.map((s) => [s, n > 0 ? sums[s] / n : RANDOM_TOP15_HITS])) as Record<Signal, number>;
-  const raw = SIGNALS.map((s) => DEFAULT_WEIGHTS[s] * Math.exp(eta * (mean[s] - RANDOM_TOP15_HITS)));
-  const total = SIGNALS.reduce((a, s) => a + DEFAULT_WEIGHTS[s], 0);
-  const rawTotal = raw.reduce((a, b) => a + b, 0);
-  const weights = { ...DEFAULT_WEIGHTS };
-  SIGNALS.forEach((s, i) => (weights[s] = Number(((raw[i] / rawTotal) * total).toFixed(4))));
-  return { weights, mean, window: Math.max(n, 0) };
-}
-
-/**
- * Aprendizado pelas apostas conferidas: compara a nota (z-score) que cada sinal deu às dezenas
- * marcadas que saíram contra as marcadas que não saíram. Vantagem positiva = o sinal apontava
- * para os acertos. Sem acertos ou sem erros, não há contraste e a vantagem é 0.
- */
-export function betAdvantage(history: Draw[], picked: number[], drawn: number[]): Record<Signal, number> {
-  const { scores } = computeNumberScores(history);
-  const isDrawn = new Set(drawn);
-  const hit = picked.filter((n) => isDrawn.has(n));
-  const miss = picked.filter((n) => !isDrawn.has(n));
-  const mean = (ns: number[], s: Signal) => ns.reduce((a, n) => a + scores[n - 1].components[s], 0) / ns.length;
-  return Object.fromEntries(
-    SIGNALS.map((s) => [s, hit.length && miss.length ? mean(hit, s) - mean(miss, s) : 0]),
-  ) as Record<Signal, number>;
-}
-
-/**
- * Pesos finais: calibração walk-forward × exp(η · vantagem nas apostas), misturados com os pesos
- * anteriores (média móvel) para que cada conferência acumule sem que uma só domine.
- */
-export function learnFromBets(
-  calibrated: StrategyWeights,
-  previous: StrategyWeights,
-  advantage: Record<Signal, number>,
-  eta = 0.5,
-  memory = 0.3,
-): StrategyWeights {
-  const total = SIGNALS.reduce((a, s) => a + calibrated[s], 0);
-  const raw = SIGNALS.map((s) => calibrated[s] * Math.exp(eta * advantage[s]));
-  const rawTotal = raw.reduce((a, b) => a + b, 0);
-  const prevTotal = SIGNALS.reduce((a, s) => a + previous[s], 0) || total;
-  const out = { ...calibrated };
-  SIGNALS.forEach((s, i) => {
-    const fresh = (raw[i] / rawTotal) * total;
-    const prev = (previous[s] / prevTotal) * total;
-    out[s] = Number(((1 - memory) * fresh + memory * prev).toFixed(4));
-  });
-  return out;
+  const mean = Object.fromEntries(SIGNALS.map((s) => [s, n > 0 ? sums[s] / n : randomTopHits(game)])) as Record<Signal, number>;
+  return { mean, window: Math.max(n, 0) };
 }
 
 export interface CheckArgs {
   bets: number[][];
   concurso: number;
   betPrice: number;
-  previousWeights: StrategyWeights;
   window?: number;
 }
 
-/** `draws` em ordem crescente; confere contra `concurso` e recalibra com todo o histórico. */
-export function runCheck(draws: Draw[], { bets, concurso, betPrice, previousWeights, window }: CheckArgs): CheckResult {
+/** `draws` em ordem crescente; confere contra `concurso`. */
+export function runCheck(game: LotteryGame, draws: Draw[], { bets, concurso, betPrice, window }: CheckArgs): CheckResult {
   const idx = draws.findIndex((d) => d.concurso === concurso);
   if (idx < 0) throw new RangeError(`Concurso ${concurso} não encontrado`);
-  const error = validateBets(bets);
+  const error = validateBets(game, bets);
   if (error) throw new RangeError(error);
   const draw = draws[idx];
   if (idx < MIN_HISTORY) throw new RangeError(`Histórico insuficiente antes do concurso ${concurso} para avaliar os sinais.`);
 
-  const checks = bets.map((b) => checkBet(draw, b, betPrice));
+  const checks = bets.map((b) => checkBet(game, draw, b, betPrice));
   const picked = new Set(checks.flatMap((c) => c.numbers));
   const drawn = new Set(draw.numbers);
   const cost = checks.reduce((a, c) => a + c.cost, 0);
   const prize = checks.reduce((a, c) => a + c.prize, 0);
 
-  const today = signalHits(draws.slice(0, idx), draw);
-  // Calibra sempre com o histórico completo: conferir um concurso antigo não deve "regredir" o modelo.
-  const calibration = calibrateWeights(draws, window);
-  const advantage = betAdvantage(draws.slice(0, idx), [...picked], draw.numbers);
-  const learned = learnFromBets(calibration.weights, previousWeights, advantage);
+  const today = signalHits(game, draws.slice(0, idx), draw);
+  const calibration = signalTrackRecord(game, draws.slice(0, idx + 1), window);
 
   return {
     draw,
@@ -188,13 +134,11 @@ export function runCheck(draws: Draw[], { bets, concurso, betPrice, previousWeig
     wrongPicks: sortAsc([...picked].filter((n) => !drawn.has(n))),
     signals: SIGNALS.map((s) => ({
       signal: s,
-      top15Hits: today[s],
-      meanTop15Hits: calibration.mean[s],
-      betAdvantage: Number(advantage[s].toFixed(3)),
-      previousWeight: previousWeights[s],
-      newWeight: learned[s],
+      topHits: today[s],
+      meanTopHits: calibration.mean[s],
     })),
+    topSize: game.drawn,
+    randomTopHits: randomTopHits(game),
     calibrationWindow: calibration.window,
-    learnedWeights: learned,
   };
 }

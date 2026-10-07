@@ -1,18 +1,19 @@
+import { LOTOFACIL as G } from '../common/lottery';
 import { syntheticDraws } from '../test-utils/fixtures';
 import { cooccurrenceMatrix } from '../statistics/statistics';
-import { cosineSimilarity, drawEmbedding, DRAW_EMBEDDING_DIMENSIONS, gameCohesion, nearestNeighbors, numberEmbeddings, topEigen } from './embeddings';
+import { cosineSimilarity, drawEmbedding, drawEmbeddingDimensions, gameCohesion, nearestNeighbors, numberEmbeddings, topEigen } from './embeddings';
 
 describe('embeddings', () => {
   const game = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
   it('draw embedding dims and self-similarity', () => {
-    const v = drawEmbedding(game);
-    expect(v).toHaveLength(DRAW_EMBEDDING_DIMENSIONS);
+    const v = drawEmbedding(G, game);
+    expect(v).toHaveLength(drawEmbeddingDimensions(G));
     expect(cosineSimilarity(v, v)).toBeCloseTo(1, 10);
   });
   it('similar draws are closer than opposite draws', () => {
-    const a = drawEmbedding(game);
-    const b = drawEmbedding([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16]);
-    const c = drawEmbedding([11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
+    const a = drawEmbedding(G, game);
+    const b = drawEmbedding(G, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16]);
+    const c = drawEmbedding(G, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
     expect(cosineSimilarity(a, b)).toBeGreaterThan(cosineSimilarity(a, c));
   });
   it('nearestNeighbors respects k and exclusion', () => {
@@ -27,7 +28,7 @@ describe('embeddings', () => {
   });
   it('number embeddings and cohesion', () => {
     const draws = syntheticDraws(300);
-    const emb = numberEmbeddings(cooccurrenceMatrix(draws), draws.length, 8);
+    const emb = numberEmbeddings(cooccurrenceMatrix(G, draws), draws.length, 8);
     expect(emb).toHaveLength(25);
     expect(emb[0]).toHaveLength(8);
     const c = gameCohesion(game, emb);

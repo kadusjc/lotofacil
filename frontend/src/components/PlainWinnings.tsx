@@ -1,5 +1,6 @@
 import type { BetPlan } from '../api/types'
 import { formatBRL, formatInt } from '../lib/format'
+import { useGame } from '../lib/games'
 import { buildOutcomes } from '../lib/odds'
 
 function inWords(p: number): string {
@@ -9,11 +10,11 @@ function inWords(p: number): string {
 }
 
 export function PlainWinnings({ plan }: { plan: BetPlan }) {
-  const outcomes = buildOutcomes(plan)
+  const outcomes = buildOutcomes(useGame(), plan)
   const avg = plan.returns.expectedPrize
   return (
     <div className="plain">
-      <h3>💰 Quanto você pode ganhar, em palavras simples</h3>
+      <h3>💰 O que pode acontecer, em palavras simples</h3>
       <p className="plain-pay">
         Você paga <strong>{formatBRL(plan.cost)}</strong>. Veja o que acontece se jogar assim:
       </p>

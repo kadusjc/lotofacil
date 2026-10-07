@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react'
 import { pad2 } from '../lib/format'
+import { useGame } from '../lib/games'
 
 interface Props {
   numbers: number[]
@@ -8,18 +10,19 @@ interface Props {
   compact?: boolean
 }
 
-/** Volante 5x5 no estilo de bilhete: papel claro, cabeçalho em faixa e dezenas marcadas a "caneta". */
+/** Volante do jogo atual no estilo de bilhete: papel claro, cabeçalho em faixa e dezenas marcadas a "caneta". */
 export function GameCard({ numbers, drawn, title, compact }: Props) {
+  const game = useGame()
   const selected = new Set(numbers)
   const hitSet = drawn ? new Set(drawn) : null
   return (
-    <figure className={`game-card${compact ? ' compact' : ''}`} aria-label={title ?? 'Jogo'}>
+    <figure className={`game-card${compact ? ' compact' : ''}`} aria-label={title ?? 'Jogo'} style={{ '--cols': game.gridColumns } as CSSProperties}>
       <figcaption className="ticket-head">
-        <span className="ticket-brand">LOTOFÁCIL</span>
+        <span className="ticket-brand">{game.name.toUpperCase()}</span>
         <span className="ticket-meta">{title ?? `${numbers.length} dezenas`}</span>
       </figcaption>
       <div className="grid" role="list">
-        {Array.from({ length: 25 }, (_, i) => i + 1).map((n) => {
+        {Array.from({ length: game.totalNumbers }, (_, i) => i + 1).map((n) => {
           const isSelected = selected.has(n)
           const isHit = isSelected && hitSet?.has(n)
           return (

@@ -1,19 +1,15 @@
 import type { BetPlan } from '../api/types'
 import { formatBRL } from './format'
+import { totalCombinations, winningNearPlus, type GameInfo } from './games'
 
-export const TOTAL_COMBINATIONS = 3_268_760
-/** Combinações de 15 que fazem 14 ou 15 pontos contra um sorteio: C(15,14)·C(10,1) + 1. */
-export const WINNING_14_PLUS = 151
-/** Preço da aposta simples usado até a API informar o valor configurado. */
-export const DEFAULT_BET_PRICE = 3.5
-
-/** Com jogos espalhados (≤ 12 dezenas em comum), as chances de 14+ somam exatamente. */
-export function spreadGamesChance(budget: number, betPrice = DEFAULT_BET_PRICE) {
+/** Com jogos espalhados (sem pares capazes de atingir a faixa juntos), as chances da faixa quase máxima somam exatamente. */
+export function spreadGamesChance(game: GameInfo, budget: number, betPrice = game.defaultBetPrice) {
   const games = Math.floor(budget / betPrice + 1e-9)
+  const total = totalCombinations(game)
   return {
     games,
-    atLeast14: Math.min(1, (games * WINNING_14_PLUS) / TOTAL_COMBINATIONS),
-    jackpot: Math.min(1, games / TOTAL_COMBINATIONS),
+    atLeastNear: Math.min(1, (games * winningNearPlus(game)) / total),
+    jackpot: Math.min(1, games / total),
   }
 }
 
@@ -25,45 +21,52 @@ export interface Outcome {
   tone: 'neg' | 'mid' | 'pos'
 }
 
-/** Linha do tempo em linguagem simples: "se jogar 100 vezes assim, o que acontece?". */
-export function buildOutcomes(plan: BetPlan): Outcome[] {
-  const { odds, returns, cost } = plan
+/** P(pelo menos um cartão com >= hits); 0 acima do máximo. */
+function atLeast(plan: BetPlan, hits: number): number {
+  return plan.odds.tiers.find((t) => t.hits === hits)?.probability ?? 0
+}
+
+/** Linha do tempo em linguagem simples: "se jogar 100 vezes assim, o que acontece?" (melhor cartão por faixa). */
+export function buildOutcomes(game: GameInfo, plan: BetPlan): Outcome[] {
+  const { returns, cost } = plan
   const payout = (hits: number) => returns.tiers.find((t) => t.hits === hits)?.payout ?? 0
   const perCard = returns.probabilityScope === 'per-ticket' ? ' (por cartão premiado)' : ''
-  return [
-    {
-      emoji: '😞',
-      title: 'Não ganhar nada',
-      probability: 1 - odds.atLeast11,
-      money: `perde os ${formatBRL(cost)}`,
-      tone: 'neg',
-    },
-    {
-      emoji: '🙂',
-      title: 'Prêmio pequeno (11, 12 ou 13 pontos)',
-      probability: odds.atLeast11 - odds.atLeast14,
-      money: `recebe de ${formatBRL(payout(11))} a ${formatBRL(payout(13))}${perCard}`,
-      tone: 'mid',
-    },
-    {
-      emoji: '🤩',
-      title: '14 pontos',
-      probability: odds.atLeast14 - odds.jackpot,
-      money: `recebe cerca de ${formatBRL(payout(14))}${perCard}`,
-      tone: 'pos',
-    },
-    {
-      emoji: '🏆',
-      title: '15 pontos (prêmio máximo)',
-      probability: odds.jackpot,
-      money: `recebe cerca de ${formatBRL(payout(15))}`,
-      tone: 'pos',
-    },
+  const [min] = game.prizeHits
+  const small = game.prizeHits.filter((h) => h < game.nearHits)
+  const outcomes: Outcome[] = [
+    { emoji: '😞', title: 'Não ganhar nada', probability: 1 - atLeast(plan, min), money: `perde os ${formatBRL(cost)}`, tone: 'neg' },
   ]
+  if (small.length) {
+    const top = small[small.length - 1]
+    outcomes.push({
+      emoji: '🙂',
+      title: `Prêmio pequeno (${small.length > 1 ? `${small.slice(0, -1).join(', ')} ou ${top}` : top} acertos)`,
+      probability: atLeast(plan, min) - atLeast(plan, game.nearHits),
+      money: small.length > 1 ? `recebe de ${formatBRL(payout(min))} a ${formatBRL(payout(top))}${perCard}` : `recebe cerca de ${formatBRL(payout(min))}${perCard}`,
+      tone: 'mid',
+    })
+  }
+  for (let h = game.nearHits; h < game.drawn; h++) {
+    outcomes.push({
+      emoji: '🤩',
+      title: `${h} acertos`,
+      probability: atLeast(plan, h) - atLeast(plan, h + 1),
+      money: `recebe cerca de ${formatBRL(payout(h))}${perCard}`,
+      tone: 'pos',
+    })
+  }
+  outcomes.push({
+    emoji: '🏆',
+    title: `${game.drawn} acertos (prêmio máximo)`,
+    probability: atLeast(plan, game.drawn),
+    money: `recebe cerca de ${formatBRL(payout(game.drawn))}`,
+    tone: 'pos',
+  })
+  return outcomes
 }
 
 /** Uma aposta por linha; dezenas separadas por espaço, vírgula, ponto e vírgula ou hífen. */
-export function parseBets(text: string): { bets: number[][]; errors: string[] } {
+export function parseBets(game: GameInfo, text: string): { bets: number[][]; errors: string[] } {
   const bets: number[][] = []
   const errors: string[] = []
   // Numera pela linha real do texto (linhas em branco são ignoradas, mas contam na numeração).
@@ -75,12 +78,12 @@ export function parseBets(text: string): { bets: number[][]; errors: string[] } 
       .filter(Boolean)
       .map(Number)
     const valid =
-      nums.length >= 15 &&
-      nums.length <= 20 &&
+      nums.length >= game.minBet &&
+      nums.length <= game.maxBet &&
       new Set(nums).size === nums.length &&
-      nums.every((n) => Number.isInteger(n) && n >= 1 && n <= 25)
+      nums.every((n) => Number.isInteger(n) && n >= 1 && n <= game.totalNumbers)
     if (valid) bets.push(nums)
-    else errors.push(`Linha ${i + 1}: use de 15 a 20 dezenas distintas entre 1 e 25.`)
+    else errors.push(`Linha ${i + 1}: use de ${game.minBet} a ${game.maxBet} dezenas distintas entre 1 e ${game.totalNumbers}.`)
   })
   return { bets, errors }
 }

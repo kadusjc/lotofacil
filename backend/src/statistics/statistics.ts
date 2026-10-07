@@ -1,4 +1,4 @@
-import { ALL_NUMBERS, Draw, FIBONACCI, FRAME, PRIMES, TOTAL_NUMBERS, DRAWN_PER_CONTEST } from '../common/lottery';
+import { allNumbers, Draw, LotteryGame } from '../common/lottery';
 
 export interface GameProfile {
   sum: number;
@@ -44,7 +44,7 @@ export interface UniformityTest {
   isUniform: boolean;
 }
 
-export function gameProfile(numbers: number[]): GameProfile {
+export function gameProfile(game: LotteryGame, numbers: number[]): GameProfile {
   const sorted = [...numbers].sort((a, b) => a - b);
   let maxRun = 1;
   let run = 1;
@@ -55,9 +55,9 @@ export function gameProfile(numbers: number[]): GameProfile {
   return {
     sum: sorted.reduce((a, b) => a + b, 0),
     odds: sorted.filter((n) => n % 2 === 1).length,
-    primes: sorted.filter((n) => PRIMES.has(n)).length,
-    frame: sorted.filter((n) => FRAME.has(n)).length,
-    fibonacci: sorted.filter((n) => FIBONACCI.has(n)).length,
+    primes: sorted.filter((n) => game.primes.has(n)).length,
+    frame: sorted.filter((n) => game.frame.has(n)).length,
+    fibonacci: sorted.filter((n) => game.fibonacci.has(n)).length,
     maxRun,
   };
 }
@@ -90,10 +90,10 @@ export function distribution(values: number[]): Distribution[] {
 }
 
 /** Estatísticas por dezena. `draws` deve estar em ordem crescente de concurso. */
-export function numberStats(draws: Draw[], recentWindow = 50): NumberStat[] {
+export function numberStats(game: LotteryGame, draws: Draw[], recentWindow = game.recentWindow): NumberStat[] {
   const total = draws.length;
   const recentStart = Math.max(0, total - recentWindow);
-  return ALL_NUMBERS.map((number) => {
+  return allNumbers(game).map((number) => {
     let frequency = 0;
     let recentFrequency = 0;
     let lastIndex = -1;
@@ -135,9 +135,10 @@ export function repeatsFromPrevious(draws: Draw[]): number[] {
   return out;
 }
 
-/** Matriz 25x25 de coocorrência (índice 0 = dezena 1). Diagonal = frequência. */
-export function cooccurrenceMatrix(draws: Draw[]): number[][] {
-  const m = Array.from({ length: TOTAL_NUMBERS }, () => new Array<number>(TOTAL_NUMBERS).fill(0));
+/** Matriz N×N de coocorrência (índice 0 = dezena 1). Diagonal = frequência. */
+export function cooccurrenceMatrix(game: LotteryGame, draws: Draw[]): number[][] {
+  const n = game.totalNumbers;
+  const m = Array.from({ length: n }, () => new Array<number>(n).fill(0));
   for (const draw of draws) {
     for (const a of draw.numbers) for (const b of draw.numbers) m[a - 1][b - 1]++;
   }
@@ -146,20 +147,21 @@ export function cooccurrenceMatrix(draws: Draw[]): number[][] {
 
 /**
  * Teste qui-quadrado de aderência à uniformidade das frequências das dezenas.
- * Cada concurso sorteia 15 de 25 sem reposição, então cada frequência é Binomial(n, p) com
- * p = 15/25 e as contagens são negativamente correlacionadas. O Pearson ingênuo (÷ esperado)
+ * Cada concurso sorteia d de N sem reposição, então cada frequência é Binomial(n, p) com
+ * p = d/N e as contagens são negativamente correlacionadas. O Pearson ingênuo (÷ esperado)
  * subestima a estatística por (1 − p); a forma correta é Σ(O−E)²/(n·p·(1−p)) · (N−1)/N ~ χ²(N−1).
  */
-export function uniformityTest(draws: Draw[]): UniformityTest {
-  const p = DRAWN_PER_CONTEST / TOTAL_NUMBERS;
+export function uniformityTest(game: LotteryGame, draws: Draw[]): UniformityTest {
+  const N = game.totalNumbers;
+  const p = game.drawn / N;
   const expected = draws.length * p;
   const variance = expected * (1 - p);
-  const stats = numberStats(draws);
+  const stats = numberStats(game, draws);
   const chiSquare = variance
     ? (stats.reduce((acc, s) => acc + (s.frequency - expected) ** 2, 0) / variance) *
-      ((TOTAL_NUMBERS - 1) / TOTAL_NUMBERS)
+      ((N - 1) / N)
     : 0;
-  const df = TOTAL_NUMBERS - 1;
+  const df = N - 1;
   // Wilson–Hilferty: (X/k)^(1/3) ~ N(1 - 2/(9k), 2/(9k))
   const z = (Math.cbrt(chiSquare / df) - (1 - 2 / (9 * df))) / Math.sqrt(2 / (9 * df));
   const pValue = 1 - normalCdf(z);

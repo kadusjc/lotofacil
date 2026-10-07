@@ -1,33 +1,26 @@
-import { TOTAL_NUMBERS, DRAWN_PER_CONTEST } from '../common/lottery';
+import { LotteryGame } from '../common/lottery';
 import { gameProfile } from '../statistics/statistics';
 
 /**
  * Embeddings numéricos (sem dependência de APIs externas):
- *  - Concurso → vetor de 31 dimensões: 25 one-hot centrados + 6 features de perfil normalizadas.
+ *  - Concurso → vetor de N + 6 dimensões: N one-hot centrados + 6 features de perfil normalizadas.
  *    O cosseno entre dois concursos aproxima a correlação de Pearson das dezenas + similaridade de perfil.
  *  - Dezena → vetor latente obtido de PPMI (Positive Pointwise Mutual Information) da matriz de
  *    coocorrência, fatorada por decomposição espectral (power iteration + deflação), como no word2vec/GloVe.
  */
-export const DRAW_EMBEDDING_DIMENSIONS = 31;
-
-const ONE_HOT_MEAN = DRAWN_PER_CONTEST / TOTAL_NUMBERS; // 0.6
 const PROFILE_WEIGHT = 0.5;
-// [média esperada, meia-amplitude] de cada feature de perfil para normalização ~[-1, 1]
-const PROFILE_NORMALIZATION: Array<[keyof ReturnType<typeof gameProfile>, number, number]> = [
-  ['sum', 195, 60],
-  ['odds', 7.8, 4],
-  ['primes', 5.4, 4],
-  ['frame', 9.6, 4],
-  ['fibonacci', 4.2, 3],
-  ['maxRun', 4.5, 4],
-];
 
-export function drawEmbedding(numbers: number[]): number[] {
+export function drawEmbeddingDimensions(game: LotteryGame): number {
+  return game.totalNumbers + game.profileNormalization.length;
+}
+
+export function drawEmbedding(game: LotteryGame, numbers: number[]): number[] {
   const set = new Set(numbers);
+  const oneHotMean = game.drawn / game.totalNumbers;
   const vec: number[] = [];
-  for (let n = 1; n <= TOTAL_NUMBERS; n++) vec.push((set.has(n) ? 1 : 0) - ONE_HOT_MEAN);
-  const profile = gameProfile(numbers);
-  for (const [key, mean, halfRange] of PROFILE_NORMALIZATION) {
+  for (let n = 1; n <= game.totalNumbers; n++) vec.push((set.has(n) ? 1 : 0) - oneHotMean);
+  const profile = gameProfile(game, numbers);
+  for (const [key, mean, halfRange] of game.profileNormalization) {
     vec.push(PROFILE_WEIGHT * clamp((profile[key] - mean) / halfRange, -1.5, 1.5));
   }
   return vec;

@@ -5,28 +5,30 @@ import type { Signal } from '../api/types'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
 import { formatBRL, formatDate } from '../lib/format'
+import { useGame } from '../lib/games'
 import { parseBets } from '../lib/odds'
 
 const SIGNAL_LABELS: Record<Signal, string> = {
   long: 'Frequência histórica',
-  recent: 'Quentes (últimos 25)',
+  recent: 'Quentes (recentes)',
   momentum: 'Momentum',
   delay: 'Atrasadas',
   analog: 'Análogos (embeddings)',
 }
 
 export function CheckPage() {
+  const game = useGame()
   const [text, setText] = useState('')
   const [concurso, setConcurso] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const check = useMutation({
-    mutationFn: (bets: number[][]) => api.check(bets, concurso ? Number(concurso) : undefined),
+    mutationFn: (bets: number[][]) => api.check(game.id, bets, concurso ? Number(concurso) : undefined),
   })
   const r = check.data
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const parsed = parseBets(text)
+    const parsed = parseBets(game, text)
     setErrors(parsed.errors)
     if (parsed.errors.length === 0 && parsed.bets.length > 0) check.mutate(parsed.bets)
   }
@@ -34,14 +36,14 @@ export function CheckPage() {
   return (
     <section className="stack">
       <form className="panel stack" onSubmit={submit}>
-        <h3>Conferir minhas apostas</h3>
+        <h3>Conferir minhas apostas da {game.name}</h3>
         <label className="field">
-          <span>Uma aposta por linha (15 a 20 dezenas, separadas por espaço ou vírgula)</span>
+          <span>Uma aposta por linha ({game.minBet} a {game.maxBet} dezenas, separadas por espaço ou vírgula)</span>
           <textarea
             rows={5}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'01 02 03 04 05 06 07 08 09 10 11 12 13 14 15\n02 04 05 07 09 10 12 13 15 17 18 20 22 23 25'}
+            placeholder={placeholder(game.drawn, game.totalNumbers)}
           />
         </label>
         <div className="row wrap">
@@ -61,7 +63,7 @@ export function CheckPage() {
       </form>
 
       <ErrorBox error={check.error} />
-      {check.isPending && <Loading label="Conferindo e recalibrando os sinais…" />}
+      {check.isPending && <Loading label="Conferindo e avaliando os sinais…" />}
 
       {r && (
         <>
@@ -105,34 +107,38 @@ export function CheckPage() {
               <thead>
                 <tr>
                   <th>Sinal</th>
-                  <th>Acertos das 15 favoritas neste concurso</th>
+                  <th>Acertos das {r.topSize} favoritas neste concurso</th>
                   <th>Média nos últimos {r.calibrationWindow}</th>
-                  <th>Apontou para os acertos?</th>
-                  <th>Peso antes → depois</th>
                 </tr>
               </thead>
               <tbody>
                 {r.signals.map((s) => (
                   <tr key={s.signal}>
                     <td>{SIGNAL_LABELS[s.signal]}</td>
-                    <td className={s.top15Hits >= 9 ? 'pos' : 'neg'}>{s.top15Hits} / 15</td>
-                    <td>{s.meanTop15Hits.toFixed(2)}</td>
-                    <td className={s.betAdvantage > 0 ? 'pos' : s.betAdvantage < 0 ? 'neg' : ''}>{s.betAdvantage.toFixed(2)}</td>
-                    <td>
-                      {s.previousWeight.toFixed(3)} → <strong>{s.newWeight.toFixed(3)}</strong>
+                    <td className={s.topHits >= r.randomTopHits ? 'pos' : 'neg'}>
+                      {s.topHits} / {r.topSize}
                     </td>
+                    <td>{s.meanTopHits.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <p className="muted small">
-              Um sinal sem poder de previsão acerta em média 9 das suas 15 favoritas. Os pesos foram recalibrados com esses
-              resultados e com os acertos/erros das suas apostas e já valem para as próximas sugestões. Isso ajusta a IA ao que funcionou recentemente, mas não muda a
-              chance real do sorteio. Use o Backtest para ver se a estratégia supera o acaso.
+              Um sinal sem poder de previsão acerta em média {r.randomTopHits.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} das
+              suas {r.topSize} favoritas, e esse número varia bastante de um concurso para outro só por acaso. Por isso os pesos não são ajustados pela conferência: correr atrás dos últimos resultados seria
+              perseguir ruído. Use o Backtest para ver se a estratégia supera o acaso.
             </p>
           </div>
         </>
       )}
     </section>
   )
+}
+
+/** Exemplo: duas apostas simples (1..d e d dezenas espalhadas). */
+function placeholder(d: number, total: number): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const first = Array.from({ length: d }, (_, i) => pad(i + 1)).join(' ')
+  const spread = Array.from({ length: d }, (_, i) => pad(Math.floor((i * total) / d) + 1)).join(' ')
+  return `${first}\n${spread}`
 }

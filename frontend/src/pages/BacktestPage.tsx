@@ -5,12 +5,15 @@ import { api } from '../api/client'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { NumberList } from '../components/GameCard'
 import { formatBRL, formatPct } from '../lib/format'
+import { useGame } from '../lib/games'
 
 export function BacktestPage() {
-  const [betSize, setBetSize] = useState(15)
+  const game = useGame()
+  const [betSize, setBetSize] = useState(game.drawn)
   const [testSize, setTestSize] = useState(100)
   const [budget, setBudget] = useState('')
-  const run = useMutation({ mutationFn: () => api.backtest(betSize, testSize, budget ? Number(budget) : undefined) })
+  const run = useMutation({ mutationFn: () => api.backtest(game.id, betSize, testSize, budget ? Number(budget) : undefined) })
+  const sizes = Array.from({ length: game.maxBet - game.minBet + 1 }, (_, i) => game.minBet + i)
   const r = run.data
 
   return (
@@ -24,7 +27,7 @@ export function BacktestPage() {
           <label className="field">
             <span>Dezenas</span>
             <select value={betSize} onChange={(e) => setBetSize(Number(e.target.value))} disabled={!!budget}>
-              {[15, 16, 17, 18, 19, 20].map((n) => (
+              {sizes.map((n) => (
                 <option key={n}>{n}</option>
               ))}
             </select>
@@ -39,7 +42,7 @@ export function BacktestPage() {
           </label>
           <label className="field">
             <span>Ou orçamento por concurso (R$)</span>
-            <input type="number" min={3.5} step="0.5" placeholder="ex.: 56" value={budget} onChange={(e) => setBudget(e.target.value)} />
+            <input type="number" min={game.defaultBetPrice} step="0.5" placeholder={`ex.: ${game.budgetPresets[0]}`} value={budget} onChange={(e) => setBudget(e.target.value)} />
           </label>
           <button className="primary" onClick={() => run.mutate()} disabled={run.isPending}>
             {run.isPending ? 'Rodando…' : 'Rodar backtest'}
@@ -66,13 +69,13 @@ export function BacktestPage() {
               <span className="muted small">acaso: {r.expectedRandomMeanHits.toFixed(2)}</span>
             </div>
             <div className="panel kpi">
-              <span className="muted small">Concursos premiados (11+)</span>
-              <strong>{r.atLeast11}</strong>
+              <span className="muted small">Concursos premiados ({game.prizeHits[0]}+)</span>
+              <strong>{r.atLeastMin}</strong>
               <span className="muted small">de {r.testSize}</span>
             </div>
             <div className="panel kpi">
-              <span className="muted small">14 ou 15 acertos</span>
-              <strong>{r.atLeast14}</strong>
+              <span className="muted small">{game.nearHits} ou mais acertos</span>
+              <strong>{r.atLeastNear}</strong>
             </div>
             <div className="panel kpi">
               <span className="muted small">Gasto × prêmios</span>

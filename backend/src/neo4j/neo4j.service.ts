@@ -2,9 +2,8 @@ import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs
 import { ConfigService } from '@nestjs/config';
 import neo4j, { Driver, QueryResult, RecordShape } from 'neo4j-driver';
 import { AppConfig } from '../config/configuration';
-import { DRAW_EMBEDDING_DIMENSIONS } from '../embeddings/embeddings';
-
-export const DRAW_VECTOR_INDEX = 'draw_embedding_index';
+import { GAMES } from '../common/lottery';
+import { drawEmbeddingDimensions } from '../embeddings/embeddings';
 
 @Injectable()
 export class Neo4jService implements OnModuleInit, OnApplicationShutdown {
@@ -47,14 +46,18 @@ export class Neo4jService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private async ensureSchema(): Promise<void> {
-    const statements = [
-      'CREATE CONSTRAINT draw_concurso IF NOT EXISTS FOR (d:Draw) REQUIRE d.concurso IS UNIQUE',
-      'CREATE CONSTRAINT number_value IF NOT EXISTS FOR (n:Number) REQUIRE n.value IS UNIQUE',
-      'CREATE INDEX draw_date IF NOT EXISTS FOR (d:Draw) ON (d.date)',
-      `CREATE VECTOR INDEX ${DRAW_VECTOR_INDEX} IF NOT EXISTS FOR (d:Draw) ON d.embedding
-       OPTIONS { indexConfig: { \`vector.dimensions\`: ${DRAW_EMBEDDING_DIMENSIONS}, \`vector.similarity_function\`: 'cosine' } }`,
-      'UNWIND range(1, 25) AS v MERGE (:Number {value: v})',
-    ];
+    // Um conjunto de rótulos por jogo; os nomes da Lotofácil são os originais (sem migração).
+    const statements = Object.values(GAMES).flatMap((game) => {
+      const g = game.graph;
+      return [
+        `CREATE CONSTRAINT ${g.drawConstraint} IF NOT EXISTS FOR (d:${g.draw}) REQUIRE d.concurso IS UNIQUE`,
+        `CREATE CONSTRAINT ${g.numberConstraint} IF NOT EXISTS FOR (n:${g.number}) REQUIRE n.value IS UNIQUE`,
+        `CREATE INDEX ${g.dateIndex} IF NOT EXISTS FOR (d:${g.draw}) ON (d.date)`,
+        `CREATE VECTOR INDEX ${g.vectorIndex} IF NOT EXISTS FOR (d:${g.draw}) ON d.embedding
+         OPTIONS { indexConfig: { \`vector.dimensions\`: ${drawEmbeddingDimensions(game)}, \`vector.similarity_function\`: 'cosine' } }`,
+        `UNWIND range(1, ${game.totalNumbers}) AS v MERGE (:${g.number} {value: v})`,
+      ];
+    });
     for (const statement of statements) await this.write(statement);
   }
 }

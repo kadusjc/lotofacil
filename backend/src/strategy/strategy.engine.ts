@@ -1,13 +1,4 @@
-import {
-  ALL_NUMBERS,
-  createRng,
-  Draw,
-  DRAWN_PER_CONTEST,
-  MAX_BET_SIZE,
-  MIN_BET_SIZE,
-  sortAsc,
-  TOTAL_NUMBERS,
-} from '../common/lottery';
+import { allNumbers, createRng, Draw, LotteryGame, maskOverlap, sortAsc, toMask } from '../common/lottery';
 import { drawEmbedding, gameCohesion, nearestNeighbors, numberEmbeddings } from '../embeddings/embeddings';
 import {
   cooccurrenceMatrix,
@@ -59,8 +50,6 @@ export interface StrategyOptions {
   games?: number;
   seed?: number;
   candidates?: number;
-  /** Sobreposição máxima entre jogos sugeridos (diversidade = mais cobertura). */
-  maxOverlap?: number;
   weights?: Partial<StrategyWeights>;
   recentWindow?: number;
   analogNeighbors?: number;
@@ -106,16 +95,16 @@ export function zScores(values: number[]): number[] {
 }
 
 export function computeNumberScores(
+  game: LotteryGame,
   draws: Draw[],
   weights: StrategyWeights = DEFAULT_WEIGHTS,
-  recentWindow = 25,
+  recentWindow = game.recentWindow,
   analogNeighbors = 30,
 ): { scores: NumberScore[]; analogs: Array<{ index: number; similarity: number }> } {
-  const stats = numberStats(draws, recentWindow);
+  const stats = numberStats(game, draws, recentWindow);
 
-  const momentumRaw = new Array<number>(TOTAL_NUMBERS).fill(0);
-  const halfLife = 20;
-  const decay = Math.pow(0.5, 1 / halfLife);
+  const momentumRaw = new Array<number>(game.totalNumbers).fill(0);
+  const decay = Math.pow(0.5, 1 / game.momentumHalfLife);
   let w = 1;
   for (let i = draws.length - 1; i >= 0 && w > 1e-4; i--) {
     for (const n of draws[i].numbers) momentumRaw[n - 1] += w;
@@ -123,10 +112,10 @@ export function computeNumberScores(
   }
 
   // Previsão por análogos: vizinhos do último concurso (excluindo ele mesmo) e seus sucessores.
-  const analogRaw = new Array<number>(TOTAL_NUMBERS).fill(0);
+  const analogRaw = new Array<number>(game.totalNumbers).fill(0);
   let analogs: Array<{ index: number; similarity: number }> = [];
   if (draws.length > 2) {
-    const vectors = draws.map((d) => drawEmbedding(d.numbers));
+    const vectors = draws.map((d) => drawEmbedding(game, d.numbers));
     const last = draws.length - 1;
     analogs = nearestNeighbors(vectors[last], vectors.slice(0, last), analogNeighbors);
     for (const { index, similarity } of analogs) {
@@ -145,7 +134,7 @@ export function computeNumberScores(
     Object.entries(raw).map(([k, v]) => [k, zScores(v)]),
   ) as Record<Component, number[]>;
 
-  const scores = ALL_NUMBERS.map((number, i) => {
+  const scores = allNumbers(game).map((number, i) => {
     const components = {
       long: z.long[i],
       recent: z.recent[i],
@@ -162,8 +151,8 @@ export function computeNumberScores(
   return { scores, analogs };
 }
 
-export function computeProfileBounds(draws: Draw[]): ProfileBounds {
-  const profiles = draws.map((d) => gameProfile(d.numbers));
+export function computeProfileBounds(game: LotteryGame, draws: Draw[]): ProfileBounds {
+  const profiles = draws.map((d) => gameProfile(game, d.numbers));
   const bounds = (values: number[]): [number, number] => {
     const r = rangeStat(values);
     return [Math.floor(r.p10), Math.ceil(r.p90)];
@@ -201,26 +190,26 @@ export function weightedSample(weights: number[], k: number, rng: () => number):
     .map((x) => x.i);
 }
 
-export function suggestGames(draws: Draw[], options: StrategyOptions = {}): StrategyResult {
+export function suggestGames(game: LotteryGame, draws: Draw[], options: StrategyOptions = {}): StrategyResult {
   if (draws.length < 30) throw new Error('Histórico insuficiente: sincronize os resultados primeiro.');
-  const betSize = options.betSize ?? DRAWN_PER_CONTEST;
-  if (betSize < MIN_BET_SIZE || betSize > MAX_BET_SIZE) {
-    throw new RangeError(`betSize deve estar entre ${MIN_BET_SIZE} e ${MAX_BET_SIZE}`);
+  const betSize = options.betSize ?? game.drawn;
+  if (!Number.isInteger(betSize) || betSize < game.minBet || betSize > game.maxBet) {
+    throw new RangeError(`betSize deve estar entre ${game.minBet} e ${game.maxBet} na ${game.name}`);
   }
   const gamesWanted = Math.max(1, Math.min(options.games ?? 1, 50));
   const weights = { ...DEFAULT_WEIGHTS, ...options.weights };
   const rng = createRng(options.seed ?? draws[draws.length - 1].concurso);
   const candidateCount = options.candidates ?? 20000;
-  const maxOverlap = options.maxOverlap ?? Math.max(betSize - 4, 9);
 
   const { scores, analogs } = computeNumberScores(
+    game,
     draws,
     weights,
     options.recentWindow,
     options.analogNeighbors,
   );
-  const bounds = computeProfileBounds(draws);
-  const embeddings = numberEmbeddings(cooccurrenceMatrix(draws), draws.length);
+  const bounds = computeProfileBounds(game, draws);
+  const embeddings = numberEmbeddings(cooccurrenceMatrix(game, draws), draws.length);
   const lastNumbers = new Set(draws[draws.length - 1].numbers);
 
   // Converte score em peso de amostragem (softmax suave).
@@ -235,37 +224,56 @@ export function suggestGames(draws: Draw[], options: StrategyOptions = {}): Stra
     const key = numbers.join('-');
     if (seen.has(key)) continue;
     seen.add(key);
-    const profile = gameProfile(numbers);
+    const profile = gameProfile(game, numbers);
     const repeatsFromLast = numbers.filter((n) => lastNumbers.has(n)).length;
     const cohesion = gameCohesion(numbers, embeddings);
     const meanScore = numbers.reduce((acc, n) => acc + (scoreByNumber.get(n) ?? 0), 0) / betSize;
     const candidate = { numbers, score: meanScore + weights.cohesion * cohesion, cohesion, profile, repeatsFromLast };
-    // Os filtros de perfil só fazem sentido para jogos de 15 dezenas (mesmo tamanho do sorteio).
-    const fits = betSize !== DRAWN_PER_CONTEST || fitsProfile(profile, repeatsFromLast, bounds);
+    // Os filtros de perfil só fazem sentido para jogos do mesmo tamanho do sorteio.
+    const fits = betSize !== game.drawn || fitsProfile(profile, repeatsFromLast, bounds);
     (fits ? fitting : outOfProfile).push(candidate);
   }
   const byScore = (a: SuggestedGame, b: SuggestedGame) => b.score - a.score;
   // Fora do perfil só entram como reserva, garantindo que sempre haja jogos suficientes.
-  const candidates = [...fitting.sort(byScore), ...outOfProfile.sort(byScore)];
-
-  // Seleção gulosa com diversidade; relaxa a sobreposição se não houver candidatos suficientes.
-  let games: SuggestedGame[] = [];
-  for (let overlap = maxOverlap; overlap <= betSize && games.length < gamesWanted; overlap++) {
-    games = [];
-    for (const candidate of candidates) {
-      const set = new Set(candidate.numbers);
-      const tooSimilar = games.some((g) => g.numbers.filter((n) => set.has(n)).length > overlap);
-      if (!tooSimilar) games.push(candidate);
-      if (games.length === gamesWanted) break;
-    }
-  }
+  fitting.sort(byScore);
+  const candidates = fitting.length >= gamesWanted ? fitting : [...fitting, ...outOfProfile.sort(byScore)];
 
   return {
     basedOnConcurso: draws[draws.length - 1].concurso,
     betSize,
-    games,
+    games: selectSpread(candidates, gamesWanted),
     numberScores: [...scores].sort((a, b) => b.score - a.score),
     profileBounds: bounds,
     analogConcursos: analogs.map((a) => ({ concurso: draws[a.index].concurso, similarity: a.similarity })),
   };
+}
+
+/**
+ * Seleção gulosa de máxima dispersão: cada novo jogo é o candidato com a menor sobreposição máxima
+ * (e depois a menor soma de sobreposições) com os já escolhidos; o score só desempata. Com vários
+ * jogos, é a sobreposição baixa — não o score — que aumenta a chance de pelo menos um premiado.
+ * `candidates` vem ordenado por preferência (melhor primeiro).
+ */
+export function selectSpread(candidates: SuggestedGame[], wanted: number): SuggestedGame[] {
+  const masks = candidates.map((c) => toMask(c.numbers));
+  const maxOv = new Array<number>(candidates.length).fill(0);
+  const sumOv = new Array<number>(candidates.length).fill(0);
+  const used = new Array<boolean>(candidates.length).fill(false);
+  const games: SuggestedGame[] = [];
+  while (games.length < Math.min(wanted, candidates.length)) {
+    let best = -1;
+    for (let i = 0; i < candidates.length; i++) {
+      if (used[i]) continue;
+      if (best < 0 || maxOv[i] < maxOv[best] || (maxOv[i] === maxOv[best] && sumOv[i] < sumOv[best])) best = i;
+    }
+    used[best] = true;
+    games.push(candidates[best]);
+    for (let i = 0; i < candidates.length; i++) {
+      if (used[i]) continue;
+      const ov = maskOverlap(masks[i], masks[best]);
+      sumOv[i] += ov;
+      if (ov > maxOv[i]) maxOv[i] = ov;
+    }
+  }
+  return games;
 }

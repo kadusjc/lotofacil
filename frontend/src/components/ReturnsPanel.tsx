@@ -1,15 +1,19 @@
 import type { PlanReturns } from '../api/types'
 import { formatBRL, formatChance, formatPct } from '../lib/format'
+import { useGame } from '../lib/games'
 
 /** Quanto a sugestão pode retornar em dinheiro: por faixa de acerto e na média (valor esperado). */
 export function ReturnsPanel({ returns, cost }: { returns: PlanReturns; cost: number }) {
+  const game = useGame()
   const perTicket = returns.probabilityScope === 'per-ticket'
+  const fixed = game.fixedPrizeHits
+  const shared = game.prizeHits.filter((h) => !fixed.includes(h))
   return (
     <div className="returns">
       <h4 className="odds-title">Quanto pode retornar em dinheiro</h4>
       <div className="kpis">
         <Stat label="Você paga" value={formatBRL(cost)} />
-        <Stat label="Prêmio máximo possível" value={formatBRL(returns.maxPayout)} hint={perTicket ? 'se um dos cartões fizer 15' : 'se fizer 15 pontos'} />
+        <Stat label="Prêmio máximo possível" value={formatBRL(returns.maxPayout)} hint={perTicket ? `se um dos cartões fizer ${game.drawn}` : `se fizer ${game.drawn} acertos`} />
         <Stat label="Retorno médio esperado" value={formatBRL(returns.expectedPrize)} hint="média por concurso no longo prazo" />
         <Stat
           label="Resultado médio"
@@ -37,8 +41,9 @@ export function ReturnsPanel({ returns, cost }: { returns: PlanReturns; cost: nu
         </tbody>
       </table>
       <p className="muted small">
-        Prêmios de 11, 12 e 13 acertos são fixos; os de 14 e 15 usam a média real dos últimos {returns.basedOnLastDraws} concursos e
-        variam a cada sorteio. O resultado médio negativo significa que, repetindo essa aposta muitas vezes, você perde essa fração do valor apostado.
+        {fixed.length > 0 && `Prêmios de ${listPt(fixed)} acertos são fixos; `}
+        {`${fixed.length > 0 ? 'os' : 'Os prêmios'} de ${listPt(shared)} acertos usam a média real das últimas ${returns.basedOnLastDraws} vezes em que a faixa teve ganhador e
+        variam a cada sorteio.`} O resultado médio negativo significa que, repetindo essa aposta muitas vezes, você perde essa fração do valor apostado.
       </p>
     </div>
   )
@@ -61,4 +66,9 @@ function Stat({ label, value, hint, tone }: { label: string; value: string; hint
       {hint && <span className={`small ${tone ?? 'muted'}`}>{hint}</span>}
     </div>
   )
+}
+
+/** "11", "11 e 12", "11, 12 e 13". */
+function listPt(items: number[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}` : String(items[0] ?? '')
 }

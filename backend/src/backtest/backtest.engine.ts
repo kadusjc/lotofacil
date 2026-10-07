@@ -1,4 +1,4 @@
-import { binomial, countHits, Draw, DRAWN_PER_CONTEST } from '../common/lottery';
+import { binomial, countHits, Draw, LotteryGame } from '../common/lottery';
 import { planBudget } from '../strategy/bet-planner';
 import { hitProbability } from '../strategy/probability';
 import { StrategyOptions, suggestGames } from '../strategy/strategy.engine';
@@ -41,8 +41,9 @@ export interface BacktestResult {
   /** Intervalo de confiança 95% da média de acertos da estratégia. */
   meanHitsCi95: [number, number];
   hitDistribution: Array<{ hits: number; observed: number; expectedRandom: number }>;
-  atLeast11: number;
-  atLeast14: number;
+  /** Concursos com algum bilhete na menor faixa premiada / na faixa quase máxima. */
+  atLeastMin: number;
+  atLeastNear: number;
   totalCost: number;
   totalPrize: number;
   roi: number;
@@ -51,46 +52,43 @@ export interface BacktestResult {
 }
 
 /** Prêmio de uma aposta de `betSize` dezenas que acertou `hits` dezenas no concurso `draw`. */
-export function prizeFor(draw: Draw, betSize: number, hits: number): number {
-  return prizeForTiers(draw.prizes, betSize, hits);
+export function prizeFor(game: LotteryGame, draw: Draw, betSize: number, hits: number): number {
+  return prizeForTiers(game, draw.prizes, betSize, hits);
 }
 
-export function prizeForTiers(prizes: Array<{ hits: number; prize: number }>, betSize: number, hits: number): number {
+export function prizeForTiers(game: LotteryGame, prizes: Array<{ hits: number; prize: number }>, betSize: number, hits: number): number {
   let total = 0;
   for (const tier of prizes) {
-    // Número de combinações de 15 dentro da aposta que acertam exatamente tier.hits.
-    const combos = binomial(hits, tier.hits) * binomial(betSize - hits, DRAWN_PER_CONTEST - tier.hits);
+    // Número de jogos simples dentro da aposta que acertam exatamente tier.hits.
+    const combos = binomial(hits, tier.hits) * binomial(betSize - hits, game.drawn - tier.hits);
     total += combos * tier.prize;
   }
   return total;
 }
 
-export function runBacktest(draws: Draw[], options: BacktestOptions = {}): BacktestResult {
+export function runBacktest(game: LotteryGame, draws: Draw[], options: BacktestOptions = {}): BacktestResult {
   const testSize = Math.min(options.testSize ?? 100, draws.length - 100);
-  const betPrice = options.betPrice ?? 3.5;
+  const betPrice = options.betPrice ?? game.defaultBetPrice;
   if (testSize <= 0) throw new Error('Histórico insuficiente para backtest.');
 
-  let betSize = options.betSize ?? DRAWN_PER_CONTEST;
+  let betSize = options.betSize ?? game.drawn;
   let tickets = 1;
   let plan = `1 aposta de ${betSize} dezenas`;
   if (options.budget !== undefined) {
-    const recommended = planBudget(options.budget, betPrice).recommended;
+    const recommended = planBudget(game, options.budget, betPrice).recommended;
     if (!recommended) throw new RangeError(`Orçamento insuficiente: uma aposta simples custa R$ ${betPrice.toFixed(2)}.`);
     betSize = recommended.betSize;
     tickets = recommended.tickets;
     plan = recommended.description;
   }
-  const multiple = tickets > 1;
 
   const rows: BacktestRow[] = [];
   for (let t = draws.length - testSize; t < draws.length; t++) {
     const target = draws[t];
-    const { games } = suggestGames(draws.slice(0, t), {
+    const { games } = suggestGames(game, draws.slice(0, t), {
       ...options,
       betSize,
       games: tickets,
-      // Mesmo critério do planejador: sobreposição <= 11 mantém os eventos "14+" disjuntos.
-      maxOverlap: multiple ? 11 : options.maxOverlap,
       candidates: options.candidates ?? Math.max(1500, tickets * 200),
       seed: target.concurso,
     });
@@ -103,7 +101,7 @@ export function runBacktest(draws: Draw[], options: BacktestOptions = {}): Backt
       drawn: target.numbers,
       hits: Math.max(...ticketHits),
       ticketHits,
-      prize: ticketHits.reduce((a, h) => a + prizeFor(target, betSize, h), 0),
+      prize: ticketHits.reduce((a, h) => a + prizeFor(game, target, betSize, h), 0),
     });
   }
 
@@ -113,19 +111,19 @@ export function runBacktest(draws: Draw[], options: BacktestOptions = {}): Backt
   const meanHits = perDraw.reduce((a, b) => a + b, 0) / rows.length;
   const variance = perDraw.reduce((a, b) => a + (b - meanHits) ** 2, 0) / Math.max(rows.length - 1, 1);
   const margin = 1.96 * Math.sqrt(variance / rows.length);
-  const expectedRandomMeanHits = (betSize * DRAWN_PER_CONTEST) / 25;
+  const expectedRandomMeanHits = (betSize * game.drawn) / game.totalNumbers;
 
-  const minHits = Math.max(0, betSize - 10);
+  const minHits = Math.max(0, betSize - (game.totalNumbers - game.drawn));
   const hitDistribution = [];
-  for (let h = minHits; h <= DRAWN_PER_CONTEST; h++) {
+  for (let h = minHits; h <= Math.min(betSize, game.drawn); h++) {
     hitDistribution.push({
       hits: h,
       observed: allHits.filter((x) => x === h).length,
-      expectedRandom: hitProbability(betSize, h) * allHits.length,
+      expectedRandom: hitProbability(game, betSize, h) * allHits.length,
     });
   }
 
-  const combos = binomial(betSize, DRAWN_PER_CONTEST);
+  const combos = binomial(betSize, game.drawn);
   const totalCost = rows.length * tickets * combos * betPrice;
   const totalPrize = rows.reduce((a, r) => a + r.prize, 0);
   const ci: [number, number] = [meanHits - margin, meanHits + margin];
@@ -144,8 +142,8 @@ export function runBacktest(draws: Draw[], options: BacktestOptions = {}): Backt
     expectedRandomMeanHits,
     meanHitsCi95: ci,
     hitDistribution,
-    atLeast11: rows.filter((r) => r.hits >= 11).length,
-    atLeast14: rows.filter((r) => r.hits >= 14).length,
+    atLeastMin: rows.filter((r) => r.hits >= game.prizeHits[0]).length,
+    atLeastNear: rows.filter((r) => r.hits >= game.nearHits).length,
     totalCost,
     totalPrize,
     roi: totalCost ? (totalPrize - totalCost) / totalCost : 0,

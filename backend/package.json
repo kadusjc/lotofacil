@@ -2,7 +2,7 @@
   "name": "lotofacil-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Lotofácil analytics API (NestJS + Neo4j + embeddings)",
+  "description": "API de análise de loterias: Lotofácil, Mega-Sena, Quina e Dia de Sorte (NestJS + Neo4j + embeddings)",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

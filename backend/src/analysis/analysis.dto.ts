@@ -12,9 +12,9 @@ export class WeightsDto {
 }
 
 export class SuggestDto {
-  @ApiPropertyOptional({ default: 15, minimum: 15, maximum: 20 })
-  @IsOptional() @IsInt() @Min(15) @Max(20)
-  betSize = 15;
+  @ApiPropertyOptional({ description: 'Dezenas por aposta (padrão: o mínimo do jogo; o intervalo válido depende do jogo)' })
+  @IsOptional() @IsInt() @Min(1) @Max(20)
+  betSize?: number;
 
   @ApiPropertyOptional({ default: 1, maximum: 50 })
   @IsOptional() @IsInt() @Min(1) @Max(50)
@@ -40,9 +40,9 @@ export class PlanDto {
 }
 
 export class BacktestDto {
-  @ApiPropertyOptional({ default: 15 })
-  @IsOptional() @IsInt() @Min(15) @Max(20)
-  betSize = 15;
+  @ApiPropertyOptional({ description: 'Dezenas por aposta (padrão: o mínimo do jogo)' })
+  @IsOptional() @IsInt() @Min(1) @Max(20)
+  betSize?: number;
 
   @ApiPropertyOptional({ default: 100, maximum: 300 })
   @IsOptional() @IsInt() @Min(10) @Max(300)
@@ -58,7 +58,7 @@ export class BacktestDto {
 }
 
 export class CheckDto {
-  @ApiProperty({ example: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], description: '1 a 200 apostas de 15–20 dezenas' })
+  @ApiProperty({ example: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], description: '1 a 200 apostas (quantidade de dezenas conforme o jogo)' })
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @IsArray({ each: true })
   bets: number[][];
 
@@ -72,7 +72,7 @@ export class CheckDto {
 }
 
 export class RecentCheckDto {
-  @ApiProperty({ example: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], description: '1 a 200 apostas de 15–20 dezenas' })
+  @ApiProperty({ example: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]], description: '1 a 200 apostas (quantidade de dezenas conforme o jogo)' })
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @IsArray({ each: true })
   bets: number[][];
 

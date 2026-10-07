@@ -5,11 +5,12 @@ import { api } from '../api/client'
 import type { StatsSummary } from '../api/types'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { formatDate, formatInt, formatPct, pad2 } from '../lib/format'
+import { useGame } from '../lib/games'
 
 type Metric = 'frequencyPct' | 'recentFrequency' | 'delay'
 const METRICS: Record<Metric, string> = {
   frequencyPct: 'Frequência histórica',
-  recentFrequency: 'Saídas nos últimos 25',
+  recentFrequency: 'Saídas recentes',
   delay: 'Atraso atual (concursos)',
 }
 const PROFILES: Array<[keyof StatsSummary['profiles'], string]> = [
@@ -21,13 +22,15 @@ const PROFILES: Array<[keyof StatsSummary['profiles'], string]> = [
 ]
 
 export function StatsPage() {
+  const game = useGame()
   const [metric, setMetric] = useState<Metric>('frequencyPct')
-  const { data, error, isLoading } = useQuery({ queryKey: ['summary'], queryFn: api.summary })
+  const { data, error, isLoading } = useQuery({ queryKey: [game.id, 'summary'], queryFn: () => api.summary(game.id) })
   if (isLoading) return <Loading />
   if (error || !data) return <ErrorBox error={error} />
 
+  const p = game.drawn / game.totalNumbers
   const chartData = data.numbers.map((n) => ({ name: pad2(n.number), value: n[metric] }))
-  const expected = metric === 'frequencyPct' ? 0.6 : metric === 'recentFrequency' ? 15 : undefined
+  const expected = metric === 'frequencyPct' ? p : metric === 'recentFrequency' ? data.recentWindow * p : undefined
 
   return (
     <section className="stack">
@@ -48,7 +51,7 @@ export function StatsPage() {
           <div className="row wrap" role="tablist">
             {(Object.keys(METRICS) as Metric[]).map((m) => (
               <button key={m} role="tab" aria-selected={metric === m} className={`chip${metric === m ? ' active' : ''}`} onClick={() => setMetric(m)}>
-                {METRICS[m]}
+                {m === 'recentFrequency' ? `Saídas nos últimos ${data.recentWindow}` : METRICS[m]}
               </button>
             ))}
           </div>
@@ -56,10 +59,10 @@ export function StatsPage() {
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
             <CartesianGrid vertical={false} stroke="var(--grid)" />
-            <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 12 }} interval={0} />
+            <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 12 }} interval={game.totalNumbers > 30 ? 'preserveStartEnd' : 0} />
             <YAxis
               tick={{ fill: 'var(--muted)', fontSize: 12 }}
-              domain={metric === 'frequencyPct' ? [0.5, 'auto'] : [0, 'auto']}
+              domain={metric === 'frequencyPct' ? [Math.floor(p * 80) / 100, 'auto'] : [0, 'auto']}
               tickFormatter={(v: number) => (metric === 'frequencyPct' ? formatPct(v, 0) : String(v))}
             />
             <Tooltip
@@ -71,7 +74,7 @@ export function StatsPage() {
           </BarChart>
         </ResponsiveContainer>
         <p className="muted small">
-          A linha tracejada é o valor esperado num sorteio perfeitamente aleatório (cada dezena sai em 60% dos concursos).
+          A linha tracejada é o valor esperado num sorteio perfeitamente aleatório (cada dezena sai em {(p * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% dos concursos).
         </p>
       </div>
 

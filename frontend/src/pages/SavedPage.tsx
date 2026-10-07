@@ -2,18 +2,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api/client'
 import type { CheckResult, RecentCheckResult } from '../api/types'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ErrorBox, Loading } from '../components/Feedback'
 import { GameCard, NumberList } from '../components/GameCard'
 import { formatBRL, formatDate } from '../lib/format'
+import { useGame } from '../lib/games'
 import { loadSavedBets, removeBet, type SavedBet } from '../lib/savedBets'
 
 export function SavedPage() {
-  const [bets, setBets] = useState(loadSavedBets)
+  const game = useGame()
+  const [bets, setBets] = useState(() => loadSavedBets(game))
 
   if (bets.length === 0) {
     return (
       <section className="panel">
-        <h3>Nenhuma aposta salva</h3>
+        <h3>Nenhuma aposta da {game.name} salva</h3>
         <p className="muted">Na aba “Sugerir jogo”, use “💾 Salvar aposta” em uma opção para guardá-la neste navegador.</p>
       </section>
     )
@@ -25,24 +28,22 @@ export function SavedPage() {
         Apostas guardadas neste navegador. Elas só somem se você remover ou limpar os dados do navegador.
       </p>
       {bets.map((b) => (
-        <SavedBetCard key={b.id} bet={b} onRemove={() => setBets(removeBet(b.id))} />
+        <SavedBetCard key={b.id} bet={b} onRemove={() => setBets(removeBet(game, b.id))} />
       ))}
     </section>
   )
 }
 
 function SavedBetCard({ bet, onRemove }: { bet: SavedBet; onRemove: () => void }) {
+  const game = useGame()
   const queryClient = useQueryClient()
-  const onSuccess = () => void queryClient.invalidateQueries({ queryKey: ['latest'] })
-  const latest = useMutation({ mutationFn: () => api.checkOfficial(bet.games), onSuccess })
+  const onSuccess = () => void queryClient.invalidateQueries({ queryKey: [game.id, 'latest'] })
+  const latest = useMutation({ mutationFn: () => api.checkOfficial(game.id, bet.games), onSuccess })
   const [count, setCount] = useState(10)
-  const recent = useMutation({ mutationFn: (n: number) => api.checkRecent(bet.games, n), onSuccess })
+  const recent = useMutation({ mutationFn: (n: number) => api.checkRecent(game.id, bet.games, n), onSuccess })
   const [view, setView] = useState<'latest' | 'recent' | null>(null)
   const busy = latest.isPending || recent.isPending
-
-  const remove = () => {
-    if (window.confirm('Remover esta aposta salva?')) onRemove()
-  }
+  const [confirming, setConfirming] = useState(false)
 
   return (
     <article className="panel stack-sm">
@@ -53,14 +54,23 @@ function SavedBetCard({ bet, onRemove }: { bet: SavedBet; onRemove: () => void }
             Salva em {formatDate(bet.savedAt.slice(0, 10))} · baseada no concurso {bet.basedOnConcurso} · {formatBRL(bet.cost)}
           </p>
         </div>
-        <button type="button" className="link" onClick={remove}>
+        <button type="button" className="link" onClick={() => setConfirming(true)}>
           Remover
         </button>
       </header>
+      {confirming && (
+        <ConfirmDialog
+          title="Remover aposta salva?"
+          message={`“${bet.description}” será apagada deste navegador. Essa ação não pode ser desfeita.`}
+          confirmLabel="Remover"
+          onConfirm={onRemove}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
       <div className="games">
         {bet.games.map((g, i) => (
           <div key={g.join('-')} className="stack-sm">
-            <GameCard numbers={g} title={bet.games.length > 1 ? `Jogo ${i + 1}` : undefined} compact={bet.games.length > 1} />
+            <GameCard numbers={g} title={bet.games.length > 1 ? `Jogo ${i + 1}` : undefined} />
           </div>
         ))}
       </div>
@@ -104,7 +114,7 @@ function LatestResult({ result: r }: { result: CheckResult }) {
       <div className="games">
         {r.bets.map((b, i) => (
           <div key={i} className="stack-sm">
-            <GameCard numbers={b.numbers} drawn={r.draw.numbers} title={r.bets.length > 1 ? `Jogo ${i + 1}` : undefined} compact={r.bets.length > 1} />
+            <GameCard numbers={b.numbers} drawn={r.draw.numbers} title={r.bets.length > 1 ? `Jogo ${i + 1}` : undefined} />
             <p className="small">
               <strong>{b.hits} acertos</strong> · {b.prize > 0 ? formatBRL(b.prize) : 'sem prêmio'}
             </p>
@@ -148,3 +158,4 @@ function RecentResult({ result: r }: { result: RecentCheckResult }) {
     </div>
   )
 }
+

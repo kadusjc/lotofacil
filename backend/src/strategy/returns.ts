@@ -1,10 +1,10 @@
-import { Draw, DRAWN_PER_CONTEST } from '../common/lottery';
+import { Draw, LotteryGame } from '../common/lottery';
 import { prizeForTiers } from '../backtest/backtest.engine';
 import { hitProbability } from './probability';
 
 /**
  * Retorno financeiro de um plano, com base nos prêmios médios reais dos últimos concursos.
- * 11, 12 e 13 acertos têm valor fixo; 14 e 15 variam conforme arrecadação e número de ganhadores.
+ * Faixas fixas (11–13 na Lotofácil) usam o valor vigente; as de rateio variam conforme arrecadação e ganhadores.
  */
 export interface PrizeEstimate {
   hits: number;
@@ -30,26 +30,29 @@ export interface PlanReturns {
   tiers: ReturnTier[];
 }
 
-/** Prêmio médio por faixa nos últimos `window` concursos (só concursos com ganhador na faixa). */
-export function averagePrizes(draws: Draw[], window = 50): PrizeEstimate[] {
-  const recent = draws.slice(-window);
-  const out: PrizeEstimate[] = [];
-  for (let hits = 11; hits <= 15; hits++) {
-    // 11–13 são fixos: usa o valor vigente (último concurso com ganhador na faixa).
-    if (hits <= 13) {
-      const current = [...recent].reverse().flatMap((d) => d.prizes).find((t) => t.hits === hits && t.prize > 0);
-      out.push({ hits, prize: current?.prize ?? 0 });
-      continue;
+/**
+ * Prêmio por faixa: fixas usam o valor vigente; as de rateio, a média das últimas `window` vezes em
+ * que a faixa teve ganhador (a Mega-Sena pode passar meses sem ganhador na sena).
+ */
+export function averagePrizes(game: LotteryGame, draws: Draw[], window = 50): PrizeEstimate[] {
+  const desc = [...draws].reverse();
+  return game.prizeHits.map((hits) => {
+    if (game.fixedPrizeHits.includes(hits)) {
+      const current = desc.slice(0, window).flatMap((d) => d.prizes).find((t) => t.hits === hits && t.prize > 0);
+      return { hits, prize: current?.prize ?? 0 };
     }
-    const values = recent
-      .flatMap((d) => d.prizes.filter((t) => t.hits === hits && t.winners > 0 && t.prize > 0))
-      .map((t) => t.prize);
-    out.push({ hits, prize: values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0 });
-  }
-  return out;
+    const values: number[] = [];
+    for (const d of desc) {
+      const tier = d.prizes.find((t) => t.hits === hits && t.winners > 0 && t.prize > 0);
+      if (tier) values.push(tier.prize);
+      if (values.length === window) break;
+    }
+    return { hits, prize: values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0 };
+  });
 }
 
 export function planReturns(
+  game: LotteryGame,
   betSize: number,
   tickets: number,
   cost: number,
@@ -57,14 +60,14 @@ export function planReturns(
   basedOnLastDraws: number,
 ): PlanReturns {
   const single = tickets <= 1;
-  const size = single ? betSize : DRAWN_PER_CONTEST;
+  const size = single ? betSize : game.drawn;
   const tiers: ReturnTier[] = [];
   let evPerTicket = 0;
-  for (let hits = 0; hits <= DRAWN_PER_CONTEST; hits++) {
-    const probability = hitProbability(size, hits);
-    const payout = prizeForTiers(prizes, size, hits);
+  for (let hits = 0; hits <= game.drawn; hits++) {
+    const probability = hitProbability(game, size, hits);
+    const payout = prizeForTiers(game, prizes, size, hits);
     evPerTicket += probability * payout;
-    if (hits >= 11) tiers.push({ hits, probability, payout });
+    if (hits >= game.prizeHits[0]) tiers.push({ hits, probability, payout });
   }
   const expectedPrize = evPerTicket * (single ? 1 : tickets);
   return {

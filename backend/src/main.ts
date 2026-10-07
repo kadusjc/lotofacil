@@ -12,7 +12,7 @@ async function bootstrap() {
   setupApp(app, config.get('corsOrigin', { infer: true }));
 
   const swagger = new DocumentBuilder()
-    .setTitle('Lotofácil Analytics API')
+    .setTitle('Loterias Lab API (Lotofácil, Mega-Sena, Quina, Dia de Sorte)')
     .setDescription('Coleta (Playwright), grafo + embeddings (Neo4j), estatística, sugestões e backtest')
     .setVersion('1.0')
     .build();

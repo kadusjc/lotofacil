@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { Draw } from '../common/lottery';
+import { Draw, LotteryGame } from '../common/lottery';
 import { Semaphore } from '../common/concurrency';
 import { AppConfig } from '../config/configuration';
 import { DrawsService } from '../draws/draws.service';
@@ -30,27 +30,28 @@ export class AnalysisService {
   private readonly useWorker = existsSync(WORKER_PATH);
   /** Limita threads simultâneas: requisições excedentes esperam na fila em vez de saturar a CPU. */
   private readonly slots = new Semaphore(Math.max(1, availableParallelism() - 1));
-  private learned: Partial<StrategyWeights> | null | undefined;
 
   constructor(
     private readonly draws: DrawsService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
-  private get betPrice(): number {
-    return this.config.get('betPrice', { infer: true });
+  private betPrice(game: LotteryGame): number {
+    return this.config.get('betPrices', { infer: true })[game.id];
   }
 
-  async summary() {
-    const draws = await this.requireDraws();
-    const profiles = draws.map((d) => gameProfile(d.numbers));
+  async summary(game: LotteryGame) {
+    const draws = await this.requireDraws(game);
+    const profiles = draws.map((d) => gameProfile(game, d.numbers));
     const repeats = repeatsFromPrevious(draws);
+    // Faixas de soma de 10 em 10 (em todos os jogos).
     const sumBuckets = profiles.map((p) => Math.floor(p.sum / 10) * 10);
     return {
       totalDraws: draws.length,
       first: { concurso: draws[0].concurso, date: draws[0].date },
       last: draws[draws.length - 1],
-      numbers: numberStats(draws, 25),
+      recentWindow: game.recentWindow,
+      numbers: numberStats(game, draws),
       profiles: {
         sum: { ...rangeStat(profiles.map((p) => p.sum)), distribution: distribution(sumBuckets) },
         odds: { ...rangeStat(profiles.map((p) => p.odds)), distribution: distribution(profiles.map((p) => p.odds)) },
@@ -58,71 +59,73 @@ export class AnalysisService {
         frame: { ...rangeStat(profiles.map((p) => p.frame)), distribution: distribution(profiles.map((p) => p.frame)) },
         repeats: { ...rangeStat(repeats), distribution: distribution(repeats) },
       },
-      uniformity: uniformityTest(draws),
+      uniformity: uniformityTest(game, draws),
     };
   }
 
-  probabilities() {
-    return { betPrice: this.betPrice, rows: probabilityTable(this.betPrice) };
+  probabilities(game: LotteryGame) {
+    const betPrice = this.betPrice(game);
+    return { betPrice, rows: probabilityTable(game, betPrice) };
   }
 
-  async suggest(dto: SuggestDto) {
-    return this.run('suggest', await this.requireDraws(), {
+  async suggest(game: LotteryGame, dto: SuggestDto) {
+    return this.run(game, 'suggest', await this.requireDraws(game), {
       betSize: dto.betSize,
       games: dto.games,
       seed: dto.seed,
-      weights: await this.weights(dto.weights),
+      weights: explicitWeights(dto.weights),
     });
   }
 
-  async plan(dto: PlanDto) {
-    return this.run('plan', await this.requireDraws(), {
+  async plan(game: LotteryGame, dto: PlanDto) {
+    return this.run(game, 'plan', await this.requireDraws(game), {
       budget: dto.budget,
-      betPrice: this.betPrice,
-      weights: await this.weights(dto.weights),
+      betPrice: this.betPrice(game),
+      weights: explicitWeights(dto.weights),
     });
   }
 
-  async backtest(dto: BacktestDto) {
-    return this.run('backtest', await this.requireDraws(), {
+  async backtest(game: LotteryGame, dto: BacktestDto) {
+    return this.run(game, 'backtest', await this.requireDraws(game), {
       betSize: dto.betSize,
       testSize: dto.testSize,
       budget: dto.budget,
-      betPrice: this.betPrice,
-      weights: await this.weights(dto.weights),
+      betPrice: this.betPrice(game),
+      weights: explicitWeights(dto.weights),
     });
   }
 
-  /** Pesos em uso: padrão, sobrescritos pelos calibrados e, por fim, pelos enviados na requisição. */
-  async currentWeights(): Promise<StrategyWeights> {
-    return { ...DEFAULT_WEIGHTS, ...(await this.weights(undefined)) };
+  /** Pesos em uso: sempre os padrão (a conferência não recalibra; ver check.engine). */
+  currentWeights(): StrategyWeights {
+    return { ...DEFAULT_WEIGHTS };
   }
 
-  /** Confere apostas contra um concurso (padrão: o último), explica os erros e recalibra os pesos. */
-  async check(dto: CheckDto) {
-    const official = dto.official ? await this.draws.fetchOfficialLatest() : null;
-    const draws = await this.requireDraws();
+  /** Confere apostas contra um concurso (padrão: o último) e explica os erros. */
+  async check(game: LotteryGame, dto: CheckDto) {
+    // Valida antes de consultar a Caixa (que abre um navegador).
+    const error = validateBets(game, dto.bets);
+    if (error) throw new BadRequestException(error);
+    const official = dto.official ? await this.draws.fetchOfficialLatest(game) : null;
+    const draws = await this.requireDraws(game);
     const concurso = official?.concurso ?? dto.concurso ?? draws[draws.length - 1].concurso;
     if (!draws.some((d) => d.concurso === concurso)) throw new NotFoundException(`Concurso ${concurso} não encontrado`);
-    const result = await this.run('check', draws, {
+    const result = await this.run(game, 'check', draws, {
       bets: dto.bets,
       concurso,
-      betPrice: this.betPrice,
-      previousWeights: await this.currentWeights(),
+      betPrice: this.betPrice(game),
     });
-    await this.draws.saveChecks(concurso, result.bets);
-    await this.draws.saveModelWeights(result.learnedWeights, draws[draws.length - 1].concurso);
-    this.learned = result.learnedWeights;
+    await this.draws.saveChecks(game, concurso, result.bets);
     return result;
   }
 
   /** Confere as apostas em cada um dos últimos concursos oficiais (só conferência, sem recalibrar). */
-  async checkRecent(dto: RecentCheckDto) {
-    const error = validateBets(dto.bets);
+  async checkRecent(game: LotteryGame, dto: RecentCheckDto) {
+    const error = validateBets(game, dto.bets);
     if (error) throw new BadRequestException(error);
-    const draws = await this.draws.fetchOfficialRecent(dto.count);
+    const draws = await this.draws.fetchOfficialRecent(game, dto.count);
+    const betPrice = this.betPrice(game);
     const rows = draws.map((draw) => {
-      const bets = dto.bets.map((b) => checkBet(draw, b, this.betPrice));
+      const bets = dto.bets.map((b) => checkBet(game, draw, b, betPrice));
       const prize = bets.reduce((a, b) => a + b.prize, 0);
       return { draw, bets, bestHits: Math.max(...bets.map((b) => b.hits)), prize };
     });
@@ -132,19 +135,13 @@ export class AnalysisService {
     return { rows, totals: { cost, prize, net: Number((prize - cost).toFixed(2)), winningDraws: rows.filter((r) => r.prize > 0).length } };
   }
 
-  private async weights(override: WeightsDto | undefined): Promise<Partial<StrategyWeights>> {
-    if (this.learned === undefined) this.learned = sanitizeWeights(await this.draws.loadModelWeights());
-    // Campos ausentes do DTO chegam como undefined e não podem apagar os pesos calibrados.
-    const explicit = Object.fromEntries(Object.entries(override ?? {}).filter(([, v]) => v !== undefined));
-    return { ...this.learned, ...explicit };
-  }
-
   /** Roda a tarefa num worker thread (não bloqueia a API); erros de domínio viram 400. */
-  private async run<K extends TaskName>(task: K, draws: Draw[], args: TaskArgs<K>): Promise<TaskResult<K>> {
+  private async run<K extends TaskName>(game: LotteryGame, task: K, draws: Draw[], args: TaskArgs<K>): Promise<TaskResult<K>> {
+    const gameId = game.id;
     try {
-      if (!this.useWorker) return (TASKS[task] as (d: Draw[], a: TaskArgs<K>) => TaskResult<K>)(draws, args);
+      if (!this.useWorker) return (TASKS[task] as (g: typeof gameId, d: Draw[], a: TaskArgs<K>) => TaskResult<K>)(gameId, draws, args);
       return await this.slots.run(() => new Promise<TaskResult<K>>((resolve, reject) => {
-        const worker = new Worker(WORKER_PATH, { workerData: { task, draws, args } });
+        const worker = new Worker(WORKER_PATH, { workerData: { task, gameId, draws, args } });
         worker.once('message', (msg: { ok: true; result: TaskResult<K> } | { ok: false; name: string; message: string }) => {
           if (msg.ok) return resolve(msg.result);
           reject(msg.name === 'RangeError' ? new RangeError(msg.message) : new Error(msg.message));
@@ -160,20 +157,16 @@ export class AnalysisService {
     }
   }
 
-  private async requireDraws(): Promise<Draw[]> {
-    const draws = await this.draws.findAll();
+  private async requireDraws(game: LotteryGame): Promise<Draw[]> {
+    const draws = await this.draws.findAll(game);
     if (draws.length < 150) {
-      throw new BadRequestException('Poucos concursos no banco. Rode a sincronização primeiro (POST /api/sync).');
+      throw new BadRequestException(`Poucos concursos da ${game.name} no banco. Clique em "Atualizar resultados" (POST /api/${game.id}/sync).`);
     }
     return draws;
   }
 }
 
-/** Pesos lidos do banco: mantém só sinais conhecidos com valores finitos e não negativos. */
-function sanitizeWeights(raw: Partial<StrategyWeights> | null): Partial<StrategyWeights> | null {
-  if (!raw) return null;
-  const known = Object.keys(DEFAULT_WEIGHTS) as Array<keyof StrategyWeights>;
-  return Object.fromEntries(
-    known.filter((k) => Number.isFinite(raw[k]) && (raw[k] as number) >= 0).map((k) => [k, raw[k]]),
-  ) as Partial<StrategyWeights>;
+/** Pesos enviados na requisição; campos ausentes chegam como undefined e não podem apagar os padrão. */
+function explicitWeights(override: WeightsDto | undefined): Partial<StrategyWeights> {
+  return Object.fromEntries(Object.entries(override ?? {}).filter(([, v]) => v !== undefined));
 }

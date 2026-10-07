@@ -9,21 +9,21 @@ import { OddsMeter } from '../components/OddsMeter'
 import { PlainWinnings } from '../components/PlainWinnings'
 import { ReturnsPanel, ReturnsSummary } from '../components/ReturnsPanel'
 import { formatBRL, formatDate, formatOneIn } from '../lib/format'
-import { DEFAULT_BET_PRICE } from '../lib/odds'
+import { useGame } from '../lib/games'
 import { isSaved, saveBet } from '../lib/savedBets'
 
-const BUDGET_PRESETS = [56, 100, 476, 1000]
-
 export function PlannerPage() {
-  const [budget, setBudget] = useState(56)
-  const plan = useMutation({ mutationFn: api.plan })
-  const probabilities = useQuery({ queryKey: ['probabilities'], queryFn: api.probabilities })
+  const game = useGame()
+  const [budget, setBudget] = useState(game.budgetPresets[0])
+  const plan = useMutation({ mutationFn: (value: number) => api.plan(game.id, value) })
+  const probabilities = useQuery({ queryKey: [game.id, 'probabilities'], queryFn: () => api.probabilities(game.id) })
   const queryClient = useQueryClient()
   const verify = useMutation({
-    mutationFn: (plan: BetPlan) => api.checkOfficial(plan.games.map((g) => g.numbers)),
+    mutationFn: (plan: BetPlan) => api.checkOfficial(game.id, plan.games.map((g) => g.numbers)),
     // A conferência pode ter importado um concurso novo.
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['latest'] }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: [game.id, 'latest'] }),
   })
+  const near = `${game.nearHits}+`
 
   const requestPlan = (value: number) => {
     verify.reset()
@@ -43,6 +43,7 @@ export function PlannerPage() {
   return (
     <section className="stack">
       <ChanceGuide onPickBudget={pickBudget} betPrice={probabilities.data?.betPrice} />
+      {game.note && <p className="panel small">ℹ️ {game.note}</p>}
       <form className="panel row wrap" onSubmit={submit}>
         <label className="field">
           <span>Quanto quer gastar?</span>
@@ -56,7 +57,7 @@ export function PlannerPage() {
           />
         </label>
         <div className="row wrap">
-          {[probabilities.data?.betPrice ?? DEFAULT_BET_PRICE, ...BUDGET_PRESETS].map((v) => (
+          {[probabilities.data?.betPrice ?? game.defaultBetPrice, ...game.budgetPresets].map((v) => (
             <button type="button" key={v} className="chip" onClick={() => setBudget(v)}>
               {formatBRL(v)}
             </button>
@@ -74,21 +75,21 @@ export function PlannerPage() {
         <>
           {plan.data.recommended ? (
             <div className="panel highlight">
-              <p className="eyebrow">Recomendação para {formatBRL(plan.data.budget)} · baseado no concurso {plan.data.basedOnConcurso}</p>
+              <p className="eyebrow">Sugestão para {formatBRL(plan.data.budget)} · baseado no concurso {plan.data.basedOnConcurso}</p>
               <h2>{plan.data.recommended.description}</h2>
               <p>
-                Custo <strong>{formatBRL(plan.data.recommended.cost)}</strong> · chance de pelo menos um 14+:{' '}
+                Custo <strong>{formatBRL(plan.data.recommended.cost)}</strong> · chance de pelo menos um {near}:{' '}
                 <strong>{formatOneIn(plan.data.recommended.oneIn)}</strong>
               </p>
               <p className="muted">{plan.data.rationale}</p>
               <p className="best-note">
-                ✔ Esta é a forma de <strong>maior chance possível</strong> para {formatBRL(plan.data.budget)}. Para aumentar
-                a chance, só aumentando o valor apostado.
+                ℹ Entre as opções para {formatBRL(plan.data.budget)}, esta tem a <strong>maior probabilidade matemática</strong> de{' '}
+                {near}. Mesmo assim, o resultado mais provável é não ganhar, e o retorno médio é negativo.
               </p>
               <PlainWinnings plan={plan.data.recommended} />
               <details className="more">
                 <summary>Ver detalhes técnicos (probabilidades e valores por faixa)</summary>
-                <h4 className="odds-title">Probabilidade real de ganhar com esta opção (0 a 100%)</h4>
+                <h4 className="odds-title">Probabilidade real de cada faixa de prêmio com esta opção (0 a 100%)</h4>
                 <OddsMeter odds={plan.data.recommended.odds} />
                 <ReturnsPanel returns={plan.data.recommended.returns} cost={plan.data.recommended.cost} />
               </details>
@@ -108,6 +109,7 @@ export function PlannerPage() {
                   plan={p}
                   recommended={p === plan.data.recommended || isSame(p, plan.data.recommended)}
                   basedOnConcurso={plan.data.basedOnConcurso}
+                  near={near}
                 >
                   <div className="verify stack-sm">
                     <button type="button" className="primary verify-btn" disabled={verify.isPending} onClick={() => verify.mutate(p)}>
@@ -131,8 +133,8 @@ export function PlannerPage() {
               <tr>
                 <th>Dezenas</th>
                 <th>Custo</th>
-                <th>Chance de 14+</th>
-                <th>Chance de 15</th>
+                <th>Chance de {near}</th>
+                <th>Chance de {game.drawn}</th>
               </tr>
             </thead>
             <tbody>
@@ -140,7 +142,7 @@ export function PlannerPage() {
                 <tr key={r.betSize}>
                   <td>{r.betSize}</td>
                   <td>{formatBRL(r.cost)}</td>
-                  <td>{formatOneIn(r.atLeast14OneIn)}</td>
+                  <td>{formatOneIn(r.atLeastNearOneIn)}</td>
                   <td>{formatOneIn(r.jackpotOneIn)}</td>
                 </tr>
               ))}
@@ -201,17 +203,20 @@ function PlanOption({
   plan,
   recommended,
   basedOnConcurso,
+  near,
   children,
 }: {
   plan: BetPlan
   recommended: boolean
   basedOnConcurso: number
+  near: string
   children?: ReactNode
 }) {
-  const [saved, setSaved] = useState(() => isSaved(plan))
+  const game = useGame()
+  const [saved, setSaved] = useState(() => isSaved(game, plan))
   const [saveError, setSaveError] = useState(false)
   const save = () => {
-    const ok = saveBet(plan, basedOnConcurso)
+    const ok = saveBet(game, plan, basedOnConcurso)
     setSaved(ok)
     setSaveError(!ok)
   }
@@ -222,11 +227,11 @@ function PlanOption({
       <header className="row between">
         <div>
           <h4>
-            {plan.kind === 'single-bet' ? `${plan.betSize} dezenas` : `${plan.tickets} jogos de 15`}
-            {recommended && <span className="badge">recomendado</span>}
+            {plan.kind === 'single-bet' ? `${plan.betSize} dezenas` : `${plan.tickets} jogos de ${game.drawn}`}
+            {recommended && <span className="badge">maior probabilidade</span>}
           </h4>
           <p className="muted">
-            {formatBRL(plan.cost)} · 14+: {formatOneIn(plan.oneIn)}
+            {formatBRL(plan.cost)} · {near}: {formatOneIn(plan.oneIn)}
           </p>
         </div>
       </header>

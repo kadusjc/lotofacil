@@ -1,53 +1,56 @@
-import { binomial, DRAWN_PER_CONTEST, MAX_BET_SIZE, MIN_BET_SIZE, TOTAL_NUMBERS } from '../common/lottery';
+import { binomial, LotteryGame, totalCombinations } from '../common/lottery';
 
 export interface BetProbability {
   betSize: number;
-  /** Quantidade de jogos simples de 15 dezenas contidos na aposta. */
+  /** Quantidade de jogos simples contidos na aposta. */
   combinations: number;
   cost: number;
-  /** Probabilidade de a aposta conter exatamente k dezenas sorteadas (k = 11..15). */
+  /** Probabilidade de a aposta conter exatamente k dezenas sorteadas (k = cada faixa premiada). */
   hitProbabilities: Record<number, number>;
-  /** P(>= 14 acertos) e "1 em X". */
-  atLeast14: number;
-  atLeast14OneIn: number;
+  /** P(>= faixa "quase máxima") e "1 em X". */
+  atLeastNear: number;
+  atLeastNearOneIn: number;
   jackpot: number;
   jackpotOneIn: number;
 }
 
-const TOTAL_COMBINATIONS = binomial(TOTAL_NUMBERS, DRAWN_PER_CONTEST); // 3.268.760
-
-/** Distribuição hipergeométrica: a aposta tem `betSize` dezenas, sorteiam-se 15 de 25. */
-export function hitProbability(betSize: number, hits: number): number {
+/** Distribuição hipergeométrica: a aposta tem `betSize` dezenas, sorteiam-se `drawn` de `totalNumbers`. */
+export function hitProbability(game: LotteryGame, betSize: number, hits: number): number {
   return (
-    (binomial(betSize, hits) * binomial(TOTAL_NUMBERS - betSize, DRAWN_PER_CONTEST - hits)) /
-    TOTAL_COMBINATIONS
+    (binomial(betSize, hits) * binomial(game.totalNumbers - betSize, game.drawn - hits)) / totalCombinations(game)
   );
 }
 
-export function betProbability(betSize: number, betPrice: number): BetProbability {
-  if (betSize < MIN_BET_SIZE || betSize > MAX_BET_SIZE) {
-    throw new RangeError(`betSize deve estar entre ${MIN_BET_SIZE} e ${MAX_BET_SIZE}`);
+/** P(aposta de `betSize` dezenas conter >= `threshold` sorteadas). */
+export function atLeastProbability(game: LotteryGame, betSize: number, threshold: number): number {
+  let p = 0;
+  for (let k = threshold; k <= game.drawn; k++) p += hitProbability(game, betSize, k);
+  return p;
+}
+
+export function betProbability(game: LotteryGame, betSize: number, betPrice: number): BetProbability {
+  if (betSize < game.minBet || betSize > game.maxBet) {
+    throw new RangeError(`betSize deve estar entre ${game.minBet} e ${game.maxBet}`);
   }
   const hitProbabilities: Record<number, number> = {};
-  for (let k = 11; k <= 15; k++) hitProbabilities[k] = hitProbability(betSize, k);
-  const atLeast14 = hitProbabilities[14] + hitProbabilities[15];
-  const combinations = binomial(betSize, DRAWN_PER_CONTEST);
+  for (const k of game.prizeHits) hitProbabilities[k] = hitProbability(game, betSize, k);
+  const atLeastNear = atLeastProbability(game, betSize, game.nearHits);
+  const jackpot = hitProbabilities[game.drawn];
+  const combinations = binomial(betSize, game.drawn);
   return {
     betSize,
     combinations,
     cost: Number((combinations * betPrice).toFixed(2)),
     hitProbabilities,
-    atLeast14,
-    atLeast14OneIn: Math.round(1 / atLeast14),
-    jackpot: hitProbabilities[15],
-    jackpotOneIn: Math.round(1 / hitProbabilities[15]),
+    atLeastNear,
+    atLeastNearOneIn: Math.round(1 / atLeastNear),
+    jackpot,
+    jackpotOneIn: Math.round(1 / jackpot),
   };
 }
 
-export function probabilityTable(betPrice: number): BetProbability[] {
+export function probabilityTable(game: LotteryGame, betPrice: number): BetProbability[] {
   const rows: BetProbability[] = [];
-  for (let size = MIN_BET_SIZE; size <= MAX_BET_SIZE; size++) rows.push(betProbability(size, betPrice));
+  for (let size = game.minBet; size <= game.maxBet; size++) rows.push(betProbability(game, size, betPrice));
   return rows;
 }
-
-export { TOTAL_COMBINATIONS };
